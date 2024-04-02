@@ -1,10 +1,8 @@
 ---
-名称: 搭建ZeroTier MOON服务器
+title: 搭建ZeroTier MOON服务器
 tags: 
-
 date: 2024-03-31T11:40:00+08:00
-lastmod: 2024-04-02T11:05:00+08:00
-
+lastmod: 2024-04-02T20:05:00+08:00
 publish: true
 ---
 

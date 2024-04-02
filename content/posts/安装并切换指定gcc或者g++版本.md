@@ -3,7 +3,7 @@ title: 安装并切换指定gcc或者g++版本
 tags:
   - Ubuntu
 date: 2024-04-01T10:58:00+08:00
-lastmod: 2024-04-02T20:02:00+08:00
+lastmod: 2024-04-02T20:24:00+08:00
 publish: true
 ---
 
@@ -11,7 +11,7 @@ publish: true
 
 # 知其然
 
-**注意：** 该方式将从 PPA 下载 gcc/g++，国内访问很慢，建议参考 [《为apt配置代理》](../../%E4%B8%BAapt%E9%85%8D%E7%BD%AE%E4%BB%A3%E7%90%86.md) 这篇文章，配置好 apt 的代理。
+**注意：** 该方式将从 PPA 下载 gcc/g++，国内访问很慢，建议参考 [《为apt配置代理》](../../%E4%B8%BAapt%E9%85%8D%E7%BD%AE%E4%BB%A3%E7%90%86.md) 这篇文章，配置好 apt 的代理。  
 以安装 `g++ 13` 版本（不支持指定小版本号）为例，以下给出用到的命令 [^1]：
 
 ``` bash
@@ -28,14 +28,15 @@ sudo update-alternatives --config gcc
 # 知其所以然
 
 上述过程可以理解为：
+
 1. 添加 PPA 源
 2. 安装指定版本的 gcc
 3. 使用 `update-alternatives` 工具调整优先级，使得 `gcc` 默认指向 `gcc-13`
 
 ## PPA 源
 
-PPA 指的是 Personal Package Archive，即个人软件包存档，其是相对官方仓库的一个概念。Ubuntu 提供了一个官方软件仓库以及该仓库的镜像仓库，该仓库会进行兼容性检查，因此更新较慢 [^2]。
-为此，引入了 PPA，即让开发人员自己搭建的非官方软件仓库，以此获取最新的软件版本。
+PPA 指的是 Personal Package Archive，即个人软件包存档，其是相对官方仓库的一个概念。Ubuntu 提供了一个官方软件仓库以及该仓库的镜像仓库，该仓库会进行兼容性检查，因此更新较慢 [^2]。  
+为此，引入了 PPA，即让开发人员自己搭建的非官方软件仓库，以此获取最新的软件版本。  
 在这里，为了安装 `gcc 13`，我们使用 `add-apt-repository` 命令添加 ppa 仓库 `ppa:ubuntu-toolchain-r/test`。在此之前我们还安装了 `software-properties-common` 工具，以确保正确使用 `add-apt-repository` 命令。
 
 ## 安装 gcc
@@ -50,9 +51,9 @@ PPA 指的是 Personal Package Archive，即个人软件包存档，其是相对
 update-alternatives --install <link> <name> <path> <priority>
 ```
 
-`link` 指的是将被创建或者更新的符号链接的地址，例如 `/usr/bin/gcc`；
-`name` 指的是替代方案的标识名称，例如 `gcc`；
-`path` 指的是符号链接指向的在替代方案中希望使用的具体程序版本或者实现，例如 `/usr/bin/gcc-12`；
+`link` 指的是将被创建或者更新的符号链接的地址，例如 `/usr/bin/gcc`；  
+`name` 指的是替代方案的标识名称，例如 `gcc`；  
+`path` 指的是符号链接指向的在替代方案中希望使用的具体程序版本或者实现，例如 `/usr/bin/gcc-12`；  
 `prioritity` 指的是该 `path` 在方案中的优先级，是整数，优先级越高数字越大，在本例中我们根据 `gcc` 版本号给定相应的优先级。
 
 你可能注意到了，我们实际使用的命令是 `sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-13 13 --slave /usr/bin/g++ g++ /usr/bin/g++-13`，后半部分还有一个参数 `--slave /usr/bin/g++ g++ /usr/bin/g++-13`，这个命令的作用是为主方案添加多个从属方案，即当我们切换 `gcc` 时，自动切换相对应的从属方案 `g++`，其语法是：

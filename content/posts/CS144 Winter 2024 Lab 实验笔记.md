@@ -8,7 +8,9 @@ tags:
 创建时间: 2023-03-30 19:33
 修改时间: 2024-04-02 11:10
 publish: true
+images: "![](https://pics-zhouxin.oss-cn-hangzhou.aliyuncs.com/Lab0%20%E5%8F%AF%E9%9D%A0%E5%AD%97%E8%8A%82%E6%B5%81.png)"
 ---
+
 
 # 资源存档
 

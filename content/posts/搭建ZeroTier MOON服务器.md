@@ -2,13 +2,13 @@
 title: 搭建ZeroTier MOON服务器
 tags: 
 date: 2024-03-31T11:40:00+08:00
-lastmod: 2024-04-02T20:05:00+08:00
+lastmod: 2024-04-02T20:24:00+08:00
 publish: true
 ---
 
 # 资源存档
 
-原文链接：[ZeroTier-One搭建moon节点 | 一水轩](https://www.tpfuture.top/views/linux/net/ZerotierOneAddMoon.html)
+原文链接：[ZeroTier-One搭建moon节点 | 一水轩](https://www.tpfuture.top/views/linux/net/ZerotierOneAddMoon.html)  
 ZeroTier 官网：[ZeroTier Central](https://my.zerotier.com/)
 
 # 搭建过程
@@ -30,7 +30,7 @@ sudo zerotier-cli join <network ID> # 此处填写你的网络的network ID
 
 ### 在控制台勾选服务器
 
-前往对应网络控制台 [ZeroTier Central](https://my.zerotier.com/)，允许刚刚添加的设备。
+前往对应网络控制台 [ZeroTier Central](https://my.zerotier.com/)，允许刚刚添加的设备。  
 
 
 ## 搭建 MOON 服务器

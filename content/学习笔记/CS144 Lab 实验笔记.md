@@ -6,7 +6,7 @@ tags:
   - TCP
   - Cpp
 date: 2023-03-30T19:33:00+08:00
-lastmod: 2024-04-02T20:05:00+08:00
+lastmod: 2024-04-02T20:24:00+08:00
 publish: true
 images: "![](https://pics-zhouxin.oss-cn-hangzhou.aliyuncs.com/Lab0%20%E5%8F%AF%E9%9D%A0%E5%AD%97%E8%8A%82%E6%B5%81.png)"
 dir: 学习笔记
@@ -20,7 +20,7 @@ dir: 学习笔记
 | ---------- | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
 | 原始代码和题解    | [CS144: CSS144 Winter 2024 Labs.](https://gitee.com/littleherozzzx/CS144)                                      | 原始代码在 archive 分支，题解在 main 分支                                   |
 | 课程主页镜像     | [CS 144: Introduction to Computer Networking](https://littleherozzzx.github.io/cs144Winter2024.github.io/)                             |                                                                |
-| 虚拟机镜像和配置过程 | [Setting up your CS144 VM using VirtualBox](https://web.stanford.edu/class/cs144/vm_howto/vm-howto-image.html) | 百度云链接：https://pan.baidu.com/s/1s7xWKn5ccph64--rdJOz6g?pwd=ozb0 |
+| 虚拟机镜像和配置过程 | [Setting up your CS144 VM using VirtualBox](https://web.stanford.edu/class/cs144/vm_howto/vm-howto-image.html) | 百度云链接：<https://pan.baidu.com/s/1s7xWKn5ccph64--rdJOz6g?pwd=ozb0> |
 
 ## 虚拟机镜像
 
@@ -45,6 +45,7 @@ sudo apt update && sudo apt install git cmake gdb build-essential clang clang-ti
 实验要求使用现代 C++ 风格进行编程，基本理念是：每个对象都只设计尽可能少的公共接口、内部存在各种安全检查、使用结束后应该正确回收垃圾，避免使用成对的关键字（例如 `new` 和 `delete`）。相反，通过构造函数和析构函数来获取和释放资源，即基于“资源获取即初始化”RAII 理念。
 
 具体来说，对于编码风格有以下要求：
+
 - 在编码过程中参考文档 [cppreference.com](https://en.cppreference.com/w/)
 - 不要使用 `malloc`、`free`、`new` 或者 `delete` 关键字
 - 不要使用原始指针，使用智能指针
@@ -58,8 +59,8 @@ sudo apt update && sudo apt install git cmake gdb build-essential clang clang-ti
 
 ## Writing webget
 
-忽略前面通过 `telnet` 刚问网页和发送邮件的内容，第一个编码任务是完成 `Webget`，使之能够获取网页。这个任务比较简单，涉及到一点网络编程的知识。
-整个任务的流程是：根据形参获取初始化主机地址，建立与该主机的 TCP 连接，发送 HTTP 请求报文（包含形参中的资源路径），打印响应报文，关闭 TCP 连接。
+忽略前面通过 `telnet` 刚问网页和发送邮件的内容，第一个编码任务是完成 `Webget`，使之能够获取网页。这个任务比较简单，涉及到一点网络编程的知识。  
+整个任务的流程是：根据形参获取初始化主机地址，建立与该主机的 TCP 连接，发送 HTTP 请求报文（包含形参中的资源路径），打印响应报文，关闭 TCP 连接。  
 实现的代码为：
 
 ```C++
@@ -84,6 +85,7 @@ void get_URL( const string& host, const string& path )
 ## An in-memory reliable byte stream
 
 第二个任务是实现可靠的内存字节流，有以下几个要求：
+
 - 输出端和输入端数据顺序一致，以 EOF 结尾
 - 流量控制，即该字节流存在一个容量上限
 - 容量上限指的是字节流中存在的数据的上限，而非发送者发送的字节流的上限。显然，我在实现时直接截断了超过剩余容量的输入
@@ -127,5 +129,5 @@ public:
 
 具体实现比较简单，维护一个双端队列进行读写操作，这里就不放代码了。值得一提的是在 `Writer::push` 的实现中，如果待写入数据超过了缓冲区剩余容量，则直接截断即可。
 
-最终吞吐量为 0.63 Gbit/s，处于能接受的水平。
+最终吞吐量为 0.63 Gbit/s，处于能接受的水平。  
 ![Lab0 可靠字节流](https://pics-zhouxin.oss-cn-hangzhou.aliyuncs.com/Lab0%20%E5%8F%AF%E9%9D%A0%E5%AD%97%E8%8A%82%E6%B5%81.png)

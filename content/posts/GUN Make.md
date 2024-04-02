@@ -4,7 +4,7 @@ tags:
   - Make
   - Cpp
 date: 2024-03-29T12:23:00+08:00
-lastmod: 2024-04-02T20:05:00+08:00
+lastmod: 2024-04-02T20:24:00+08:00
 publish: true
 ---
 
@@ -27,8 +27,8 @@ target ... : prerequisites ...
     ...
 ```
 
-**target：** 目标文件、可执行文件、或者标签
-**prerequisites：** 生成该 target 所依赖的 target 或者文件
+**target：** 目标文件、可执行文件、或者标签  
+**prerequisites：** 生成该 target 所依赖的 target 或者文件  
 **recipe：** 该 target 执行的 shell 命令
 
 直白地说，prerequisites 中如果有一个以上的文件比 target 文件要新的话，recipe 所定义的命令就会被执行。
@@ -63,16 +63,16 @@ targets ... : prerequisites ...; command
 
 ## 使用通配符
 
-通配符包括 *，？和~。
+通配符包括 *，？和~。  
 波浪号~指的是当前用户的家目录，`~User/...` 指的是指定用户 `User` 的家目录。
 
 ## 文件搜寻
 
 makefile 提供了一个特殊变量 `VPATH` 用来指示源文件所在目录。`VPATH` 可以赋值多个路径，使用 `:` 隔开即可。make 搜索的第一优先级为当前目录，其次是 `VPATH` 指向的目录。
 
-此外，make 还提供了关键字 `vpath`，用于灵活指定搜索路径，其有三种用法：
-`vpath <pattern> <dirs>`：为符合模式 `pattern` 的文件指定搜索目录 `dirs`
-`vpath <pattern>`：为符合模式 `pattern` 的文件清除搜索目录
+此外，make 还提供了关键字 `vpath`，用于灵活指定搜索路径，其有三种用法：  
+`vpath <pattern> <dirs>`：为符合模式 `pattern` 的文件指定搜索目录 `dirs`  
+`vpath <pattern>`：为符合模式 `pattern` 的文件清除搜索目录  
 `vpath`：清除所有文件的搜索目录
 
 `vpath` 使用 `%` 来指定匹配模式，`%` 可以匹配零个或者若干字符。

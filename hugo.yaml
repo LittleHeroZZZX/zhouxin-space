@@ -1,4 +1,72 @@
-baseURL: https://example.org/
-languageCode: en-us
-title: My New Hugo Site
-theme: ["PaperMod"]
+baseURL: http://www.zhouxin.space # 绑定的域名
+paginate: 10    # 首页每页显示的文章数
+theme: PaperMod # 主题名称，和themes文件夹下的一致
+languageCode: zh-cn # en-us
+
+hasCJKLanguage: true # 自动检测是否包含中文日文韩文,如果文章中使用了很多中文引号的话可以开启
+enableInlineShortcodes: true
+enableEmoji: true # 允许使用 Emoji 表情，建议 true
+enableRobotsTXT: true
+buildDrafts: false
+buildFuture: false
+buildExpired: false
+enableEmoji: true
+pygmentsUseClasses: true
+
+
+
+
+params:
+  title: 周鑫的个人博客
+  description: halo
+  ShowCodeCopyButtons: true
+  author: 周鑫
+  ShowReadingTime: true
+  ShowShareButtons: false
+  ShowFullTextinRSS: true
+  showtoc: true
+  ShowPostNavLinks: true
+  ShowBreadCrumbs: true
+  ShowWordCount: true
+  ShowRssButtonInSectionTermList: true
+  # UseHugoToc: true
+  comments: true
+  defaultTheme: auto
+
+
+  profileMode:
+    enabled: true
+    title: 春风得意马蹄疾，一日看尽长安花
+    subtitle: 👋你好呀  欢迎来访 </br>👇我的联系方式
+    imageUrl: https://pics-zhouxin.oss-cn-hangzhou.aliyuncs.com/Image_1712033897663.jpg # profile页面展示的头像
+    buttons:
+    - name: Archive
+      url: "/archive"
+    - name: Github
+      url: "https://github.com/LittleHeroZZZX"
+    - name: 知乎
+      url: https://www.zhihu.com/people/LittleHerozzzx
+
+  socialIcons: # profile页面展示的社交信息
+  - name: "zhihu"
+    url: "https://www.zhihu.com/people/LittleHerozzzx"
+  - name: "Github"
+    url: "https://github.com/LittleHeroZZZX"
+  - name: "email"
+    url: "mailto:zhou.xin2000@outlook.com"
+  - name: "RSS"
+    url: /
+
+menu:
+  main:
+    - name: "归档"
+      url: /archive
+    - name: "友链"
+      url: /
+
+markup:
+    goldmark:
+        renderer:
+            unsafe: true # HUGO 默认转义 Markdown 文件中的 HTML 代码，如需开启的话
+
+defaultContentLanguage: zh

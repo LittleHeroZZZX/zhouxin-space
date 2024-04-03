@@ -59,12 +59,18 @@ params:
 
 menu:
   main:
+    - name: 🔍搜索
+      url: /search
+      weight: 1
     - name: 🏷️标签
       url: /tags
+      weight: 2
     - name: 📦归档
       url: /archive
+      weight: 3
     - name: 🤝友链
       url: /
+      weight: 4
 
 markup:
     goldmark:
@@ -72,3 +78,11 @@ markup:
             unsafe: true # HUGO 默认转义 Markdown 文件中的 HTML 代码，如需开启的话
 
 defaultContentLanguage: zh
+
+# 搜索功能
+outputs:
+  home:
+    - HTML
+    - RSS
+    - JSON # necessary for search
+

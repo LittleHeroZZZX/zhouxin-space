@@ -41,12 +41,11 @@ params:
     imageUrl: https://pics-zhouxin.oss-cn-hangzhou.aliyuncs.com/Image_1712033897663.jpg # profile页面展示的头像
     buttons:
     - name: Archive
-      url: "/archive"
-    - name: Github
-      url: "https://github.com/LittleHeroZZZX"
-    - name: 知乎
-      url: https://www.zhihu.com/people/LittleHerozzzx
-
+      url: /archive
+    - name: 建站日志
+      url: /建站日志
+    - name: 技术笔记
+      url: /技术笔记
   socialIcons: # profile页面展示的社交信息
   - name: "zhihu"
     url: "https://www.zhihu.com/people/LittleHerozzzx"

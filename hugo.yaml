@@ -34,6 +34,7 @@ params:
   # UseHugoToc: true
   comments: true
   defaultTheme: auto
+  DateFormat: "2006年1月2日"
 
 
   profileMode:
@@ -81,19 +82,15 @@ markup:
       renderer:
           unsafe: true # HUGO 默认转义 Markdown 文件中的 HTML 代码，如需开启的话
   highlight:
-    anchorLineNos: false
     codeFences: true
-    guessSyntax: true
+    guessSyntax: false
     hl_Lines: ""
-    hl_inline: true
-    lineAnchors: ""
     lineNoStart: 1
-    lineNos: true
+    lineNos: false
     lineNumbersInTable: true
     noClasses: true
-    noHl: false
-    style: doom-one
-    tabWidth: 4 
+    style: monokai
+    tabWidth: 4
 
 defaultContentLanguage: zh
 

@@ -1,3 +1,4 @@
+title: 周鑫的个人博客
 baseURL: http://www.zhouxin.space # 绑定的域名
 paginate: 10    # 首页每页显示的文章数
 theme: PaperMod # 主题名称，和themes文件夹下的一致
@@ -12,6 +13,7 @@ buildFuture: false
 buildExpired: false
 enableEmoji: true
 pygmentsUseClasses: true
+pluralizelisttitles: false
 
 
 
@@ -58,23 +60,40 @@ params:
 
 menu:
   main:
+    - name: 🏠主页
+      url: /
+      weight: 1
     - name: 🔍搜索
       url: /search
-      weight: 1
+      weight: 2
     - name: 🏷️标签
       url: /tags
-      weight: 2
+      weight: 3
     - name: 📦归档
       url: /archive
-      weight: 3
-    - name: 🤝友链
-      url: /
       weight: 4
+    - name: 🤝友链
+      url: /404
+      weight: 5
 
 markup:
-    goldmark:
-        renderer:
-            unsafe: true # HUGO 默认转义 Markdown 文件中的 HTML 代码，如需开启的话
+  goldmark:
+      renderer:
+          unsafe: true # HUGO 默认转义 Markdown 文件中的 HTML 代码，如需开启的话
+  highlight:
+    anchorLineNos: false
+    codeFences: true
+    guessSyntax: true
+    hl_Lines: ""
+    hl_inline: true
+    lineAnchors: ""
+    lineNoStart: 1
+    lineNos: true
+    lineNumbersInTable: true
+    noClasses: true
+    noHl: false
+    style: doom-one
+    tabWidth: 4 
 
 defaultContentLanguage: zh
 

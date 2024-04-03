@@ -59,9 +59,11 @@ params:
 
 menu:
   main:
-    - name: "归档"
+    - name: 🏷️标签
+      url: /tags
+    - name: 📦归档
       url: /archive
-    - name: "友链"
+    - name: 🤝友链
       url: /
 
 markup:

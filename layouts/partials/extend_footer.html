@@ -1,22 +1,23 @@
 {{- if not (.Param "hideCustumFooter") }}
 <footer class="footer">
+  <div>
+    <span id="busuanzi_container_site_pv">
+      本站总访问量<span id="busuanzi_value_site_pv"></span>次
+    </span>
+    |
+    <span><a href="https://beian.miit.gov.cn">浙ICP备2024085492号</a></span>
+  </div>
   {{- if site.Copyright }}
   <span>{{ site.Copyright | markdownify }}</span>
   {{- else }}
   <span>&copy; {{ now.Year }} <a href="{{ "" | absLangURL }}">{{ site.Title }}</a></span>
   {{- end }}
-  
+  |
   <span>
     Powered by
     <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
     <a href="https://github.com/adityatelange/hugo-PaperMod/" rel="noopener" target="_blank">PaperMod</a>
   </span>
-  {{ if .Site.Params.busuanzi.enable -}}
-  <div>
-  <span id="busuanzi_container_site_pv">
-    本站总访问量<span id="busuanzi_value_site_pv"></span>次
-  </span>
-</div>
-  {{- end -}}
+  
 </footer>
 {{- end }}

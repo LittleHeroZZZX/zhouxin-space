@@ -27,7 +27,8 @@ params:
   ShowReadingTime: true
   ShowShareButtons: false
   ShowFullTextinRSS: true
-  showtoc: true
+  Showtoc: true
+  TocOpen: true
   ShowPostNavLinks: true
   ShowBreadCrumbs: true
   ShowWordCount: true

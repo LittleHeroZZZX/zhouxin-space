@@ -19,6 +19,7 @@ pluralizelisttitles: false
 
 
 params:
+  ViewCount: true
   title: 周鑫的个人博客
   description: halo
   ShowCodeCopyButtons: true
@@ -35,6 +36,10 @@ params:
   comments: true
   defaultTheme: auto
   DateFormat: "2006年1月2日"
+  busuanzi:
+    enable: true
+  
+  hideFooter: true
 
 
   profileMode:

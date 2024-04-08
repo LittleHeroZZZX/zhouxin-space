@@ -1,1 +1,14 @@
-<link rel="stylesheet" href="https://cdn.staticfile.org/lxgw-wenkai-screen-webfont/1.7.0/style.css" media="print" onload="this.media='all'">  
+<link rel="stylesheet" href="https://cdn.staticfile.org/lxgw-wenkai-screen-webfont/1.7.0/style.css" media="print"
+    onload="this.media='all'">
+<!-- busuanzi -->
+{{- if .Site.Params.busuanzi.enable -}}
+<script async src="//busuanzi.ibruce.info/busuanzi/2.3/busuanzi.pure.mini.js"></script>
+<meta name="referrer" content="no-referrer-when-downgrade">
+{{- end -}}
+
+<style>
+    :root {
+        --footer-height: 80px
+            /* 添加或修改其他变量 */
+    }
+</style>

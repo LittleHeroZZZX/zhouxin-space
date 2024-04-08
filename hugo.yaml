@@ -62,7 +62,7 @@ params:
   - name: "email"
     url: "mailto:zhou.xin2000@outlook.com"
   - name: "RSS"
-    url: /
+    url: /index.xml
 
 menu:
   main:

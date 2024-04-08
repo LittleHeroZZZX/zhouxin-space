@@ -46,7 +46,7 @@ params:
     enabled: true
     title: 春风得意马蹄疾，一日看尽长安花
     subtitle: 👋你好呀  欢迎来访 </br>👇我的联系方式
-    imageUrl: https://pics-zhouxin.oss-cn-hangzhou.aliyuncs.com/Image_1712033897663.jpg # profile页面展示的头像
+    imageUrl: https://pics-zhouxin.oss-cn-hangzhou.aliyuncs.com/Image_1712033897663.jpg
     buttons:
     - name: Archive
       url: /archive

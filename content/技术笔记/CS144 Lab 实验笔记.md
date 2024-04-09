@@ -6,7 +6,7 @@ tags:
   - TCP
   - Cpp
 date: 2023-03-30T19:33:00+08:00
-lastmod: 2024-04-03T10:44:00+08:00
+lastmod: 2024-04-09T20:58:00+08:00
 publish: true
 dir: 技术笔记
 ---
@@ -23,7 +23,7 @@ dir: 技术笔记
 
 ## 虚拟机镜像
 
-在 WSL2 上对 Lab 0 进行测试时，发现 `make check webget` 报错 `make[3]: ../tun.sh: Command not found`，这个 `tun.sh` 应该是构建过程中自动生成的文件，怀疑是 wsl 兼容性问题。CS144 官网给出了 Virtual Box 镜像及相应配置过程：[Setting up your CS144 VM using VirtualBox](https://web.stanford.edu/class/cs144/vm_howto/vm-howto-image.html)。
+CS144 官网给出了 Virtual Box 镜像及相应配置过程：[Setting up your CS144 VM using VirtualBox](https://web.stanford.edu/class/cs144/vm_howto/vm-howto-image.html)。
 
 # Lab 0
 
@@ -130,3 +130,111 @@ public:
 
 最终吞吐量为 0.63 Gbit/s，处于能接受的水平。  
 ![Lab0 可靠字节流](https://pics-zhouxin.oss-cn-hangzhou.aliyuncs.com/Lab0%20%E5%8F%AF%E9%9D%A0%E5%AD%97%E8%8A%82%E6%B5%81.png)
+
+# Lab 1 
+
+## Putting substrings in sequence
+
+这个模块要求实现一个 TCP 包重组模块，我感觉就是实现计网中 GBN 算法中的接受窗口，缓存收到的处于接收窗口内的 TCP 包、对其按序重组，并及时写入 Lab 0 中实现的可靠内存字节流中。做下来发现这个任务有以下几个要求：
+
+- 实现包重组，包括乱序、重复、过期、截断等
+- 该模块缓冲区不得大于内存字节流中的可用缓冲区大小
+	- 如果包过长，则截断保存
+
+每个包到达时，有三个字段标识数据内容 `data`、包序号 `first_index` 和是否为最后一个包 `is_last_substring`，对于乱序到达的数据报，我们要暂存这些信息，我使用如下一个结构体保存每一个数据报：
+
+```C++
+struct reassembler_item{
+  std::string data;
+  uint64_t first_index;
+  uint64_t last_index; // 左闭右开
+  bool is_last;
+
+  bool operator < (const reassembler_item& x) const{
+    return first_index < x.first_index;
+  }
+
+  reassembler_item(std::string data1, uint64_t first_index1, uint64_t last_index1, bool is_last1)
+    : data(std::move(data1)),
+    first_index(first_index1),
+    last_index(last_index1),
+    is_last(is_last1) {}
+};
+```
+
+为了方便比较，我引入了一个字段用于表示这个包的数据表示的序号范围，采用左闭右开区间是因为存在一些空串（用来标识数据已经发送结束），其右闭区间为 -1，对于无符号数下溢了。
+
+使用 `vector` 暂存收到的乱序数据报，并维护保证其始终有序且不存在重复元素。具体来说，在每次插入数据报时，使用 `std::lower_bound` 二分查找其待插入位置。找到插入位置后，待插入数据报可能向后覆盖了好几个已收到的数据报（例如，新收到的数据范围为 100~200，但是 110~120、190~210 范围的数据报在此之间已经收到并且保存在本模块缓冲区中），因此检查待插入位置后面可能被覆盖的元素，被待插入数据报完全覆盖的数据报直接扔掉，不完全覆盖的数据报则先拼接到待插入的数据报中，然后再扔掉。同样地，待插入数据报也有可能被待插入位置前的数据报覆盖，如果被完全覆盖了，则直接扔掉待插入数据报；如果被不完全覆盖，则拼接到前一个数据报后再扔掉。只有没被覆盖的数据报才需要被单独插入到模块内部暂存区中。  
+注意，上文所说的覆盖包含无重叠但相邻的情况，即 [1,200) 和 [200,300) 这两个数据包也是可以合并的。这可以保证如果有字符串可以向内存缓冲区写入，则这个字符串一定是且仅是暂存区的第一个数据包。  
+
+只有当暂存区新插入数据包时，才需要检查暂存区数据能否写入内存缓冲区。暂存区 `insert` 方法实现如下：
+
+```C++
+void Reassembler::insert( uint64_t first_index, string data, bool is_last_substring )
+{
+  // Your code here.
+  uint64_t capacity = output_.writer().available_capacity();
+  // 可以接受的序号范围为[current_index, current_index+capacity)  左闭右开
+  // data中数据的序号范围为[first_index, first_index+data.size())
+  // 二者取交集，若为空说明该串过期或者太早到来
+  uint64_t left_bound = max(first_index, current_index_);
+  uint64_t right_bound = min(current_index_+capacity, first_index+data.size());
+  if(right_bound < left_bound) { // 相等为空串，也能接受（可能标志了last_string）
+    return; // 对于buffer_没有更新操作，后续不会向缓冲区写入
+  }
+
+  reassembler_item item = reassembler_item(
+    data.substr( left_bound-first_index, right_bound-left_bound),
+    left_bound, right_bound, is_last_substring && right_bound == first_index+data.size());
+  pending_size_ += item.data.size(); // 先全部加进去，后面根据覆盖的内容再移除
+  auto insert_iter = lower_bound(buffer_.begin(), buffer_.end(), item);
+  // 先判断item是否向后覆盖了其它已插入buffer_的数据,如果有则合并
+  auto iter = insert_iter;
+  while (iter != buffer_.end() && item.last_index >= iter->first_index ){
+    if(item.last_index < iter->last_index) { // 只有部分覆盖才要合并，全覆盖直接erase即可
+      item.data += iter->data.substr(item.last_index-iter->first_index);
+      // 覆盖长度为item_last-iter_first
+      pending_size_ -= item.last_index - iter->first_index;
+      item.last_index = iter->last_index;
+      item.is_last |= iter->is_last;
+    }
+    else {
+      pending_size_ -= iter->data.size();
+    }
+    iter = buffer_.erase(iter);
+  }
+  // 再判断前一个数据是否覆盖了item
+  // 被前一个覆盖直接在前一个元素中修改，而不需要再插入item了
+  if(insert_iter != buffer_.begin()){
+    iter = insert_iter - 1;
+    if(iter->last_index >= item.first_index){
+      if(iter->last_index < item.last_index){ // 非完全覆盖
+        iter->data += item.data.substr(iter->last_index-item.first_index);
+        pending_size_ -= iter->last_index - item.first_index;
+        iter->last_index = item.last_index;
+        iter->is_last |= item.is_last;
+      } else { // 完全覆盖
+        pending_size_ -= item.data.size();
+      }
+      // 没插入，不需要删除的代码
+      // 直接return，不要运行后面插入insert代码
+      return;
+    }
+  }
+  // insert item into buffer_
+  buffer_.insert(insert_iter, item);
+  // 只有插入了新的item，才有可能需要向缓冲区写入
+  if(buffer_[0].first_index == current_index_){
+    auto& to_write_item = buffer_[0];
+    output_.writer().push(to_write_item.data);
+    pending_size_ -= to_write_item.data.size();
+    current_index_ = to_write_item.last_index;
+    if(to_write_item.is_last){
+      output_.writer().close();
+    }
+    buffer_.erase(buffer_.begin());
+  }
+
+
+}
+```

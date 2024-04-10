@@ -37,7 +37,7 @@ CS144 官网给出了 Virtual Box 镜像及相应配置过程：[Setting up your
 sudo apt update && sudo apt install git cmake gdb build-essential clang clang-tidy clang-format gcc-doc pkg-config glibc-doc tcpdump tshark
 ```
 
-文档中提到测试环境是 `Ubuntu 23.10 LTS`+`g++ 13.2`，而上述命令并不能安装对应版本的 gcc，可以参考这篇文章安装最新的 `g++`：[安装并切换指定gcc或者g++版本](./%E5%AE%89%E8%A3%85%E5%B9%B6%E5%88%87%E6%8D%A2%E6%8C%87%E5%AE%9Agcc%E6%88%96%E8%80%85g++%E7%89%88%E6%9C%AC.md)，在 Ubuntu 22 上最新只能安装 13.1 版本的 g++。后续实验均在此基础上进行。
+文档中提到测试环境是 `Ubuntu 23.10 LTS`+`g++ 13.2`，而上述命令并不能安装对应版本的 gcc，可以参考这篇文章安装最新的 `g++`：[安装并切换指定gcc或者g++版本](../../Ubuntu/%E5%AE%89%E8%A3%85%E5%B9%B6%E5%88%87%E6%8D%A2%E6%8C%87%E5%AE%9Agcc%E6%88%96%E8%80%85g++%E7%89%88%E6%9C%AC.md)，在 Ubuntu 22 上最新只能安装 13.1 版本的 g++。后续实验均在此基础上进行。
 
 ## 现代 C++
 

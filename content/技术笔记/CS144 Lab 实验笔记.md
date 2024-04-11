@@ -6,7 +6,7 @@ tags:
   - TCP
   - Cpp
 date: 2023-03-30T19:33:00+08:00
-lastmod: 2024-04-11T12:46:00+08:00
+lastmod: 2024-04-11T12:48:00+08:00
 publish: true
 dir: 技术笔记
 math: "true"
@@ -364,8 +364,8 @@ $$
 
 $$
 \begin{aligned}
-absSeq \% 2^{32} &= (seqno'-zeroPoint)\%2^{32} \\
-&= (seqno+n\times 2^{32} - zeroPoint)\%2^{32} \\ 
+absSeq \% 2^{32} &= (seqno'-zeroPoint)\%2^{32} \\\
+&= (seqno+n\times 2^{32} - zeroPoint)\%2^{32} \\\
 &= (seqno-zeroPoint + 2^{32}) \% 2^{32}
 \end{aligned}
 $$

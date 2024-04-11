@@ -1,5 +1,5 @@
 title: 周鑫的个人博客
-baseURL: http://www.zhouxin.space # 绑定的域名
+baseURL: https://www.zhouxin.space # 绑定的域名
 paginate: 10    # 首页每页显示的文章数
 theme: PaperMod # 主题名称，和themes文件夹下的一致
 languageCode: zh-cn # en-us
@@ -82,7 +82,6 @@ menu:
     - name: 🤝友链
       url: /404
       weight: 5
-
 markup:
   goldmark:
       renderer:

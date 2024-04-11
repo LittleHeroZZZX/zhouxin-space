@@ -1,4 +1,4 @@
-title: 周鑫的个人博客
+title: 年少一生
 baseURL: https://www.zhouxin.space # 绑定的域名
 paginate: 10    # 首页每页显示的文章数
 theme: PaperMod # 主题名称，和themes文件夹下的一致
@@ -20,7 +20,7 @@ pluralizelisttitles: false
 
 params:
   ViewCount: true
-  title: 周鑫的个人博客
+  title: 年少一生
   description: halo
   ShowCodeCopyButtons: true
   author: 周鑫
@@ -41,6 +41,7 @@ params:
     enable: true
   
   hideFooter: true
+  ShowAllPagesInArchive: true
 
 
   profileMode:

@@ -6,7 +6,7 @@ tags:
   - TCP
   - Cpp
 date: 2023-03-30T19:33:00+08:00
-lastmod: 2024-04-10T10:14:00+08:00
+lastmod: 2024-04-11T10:57:00+08:00
 publish: true
 dir: 技术笔记
 ---
@@ -228,7 +228,7 @@ uint64_t Reader::bytes_buffered() const
 
 ```
 
-最终吞吐量最高跑到了 27 Gbit/s。  
+最终吞吐量最高跑到了 34 Gbit/s。  
 ![Lab0 实验结果](http://pics.zhouxin.space/20240410101229.png)
 
 # Lab 1 
@@ -341,3 +341,126 @@ void Reassembler::insert( uint64_t first_index, string data, bool is_last_substr
 
 最终重组模块吞吐量最高跑到了 10 Gbit/s。  
 ![Lab1 实验结果](http://pics.zhouxin.space/20240410101326.png)
+
+# Lab 2
+
+到此为止，我们已经完成了内存可靠字节流和 TCP 包重组模块，重组模块将收到的 TCP 包进行重组，并及时写入内存字节流。接下来，我们需要写一个 TCP 接收器模块，接收来自 peer 发送方的消息，并回复 ACK 和接收窗口大小。
+
+在此之前，有一个数据格式问题：在前两个模块中，我们使用 `uint64` 来标记序列号，可是在 TCP 的数据包只有 32 位用于记录序号，并且初始包（SYN）的序号可能是随机的。因此，我们首先要实现一个 32 位 TCP 包序号和 64 位绝对序号互相转换的模块。前者开始序号随机，并不断自增取余；后者固定从 0 开始自增，且我们认为总数据量不可能超过 2^64Byte，即 2^34GB。
+
+## Translating between 64-bit indexes and 32-bit seqnos
+
+![TCP包序号、绝对序号和流序号之间的对应关系](http://pics.zhouxin.space/20240411101104.png)  
+根据上图定义，不难发现 seqno 和 abs seqno 存在如下对应关系：
+
+$$
+seqno = (absSeqno+zeroPoint) \% 2^{32}
+$$
+
+从 64 位转 32 位根据上式转换即可，其中对 2^32 取余是不必要的，因为 32 位数自动截断高 32 位。
+
+从 32 位向 64 位转换，我们需要分开考虑其高低 32 位。首先是低 32 位，低 32 位标识了这个包的是整个序列的第 $absSeq\%2^{32}$ 个包。那怎么通过 $seqno$ 计算它是整个序列的第几个包呢？$seqno$ 在自增过程中会不断取余，若不取余，记其为 $seqno'$，那么这个包是整个序列的第 $seqno'-zeroPoint$ 个包，而 $seqno'=seqno+n\times 2^{32}$，即：
+
+$$
+\begin{aligned}
+absSeq \% 2^{32} &= (seqno'-zeroPoint)\%2^{32} \\
+&= (seqno+n\times 2^{32} - zeroPoint)\%2^{32} \\ 
+&= (seqno-zeroPoint + 2^{32}) \% 2^{32}
+\end{aligned}
+$$
+
+上式即为计算绝对序号低 32 位的方法。得到低 32 位后，就要根据 checkPoint 得到高 32 位。显然，为了接近 checkPoint，高 32 位也是越接近越好，因此高 32 位可以为 checkPoint 的高 32 位或者在此基础上±1，然后比较这三个方案哪个更接近 checkPoint 即可。
+
+`wrapping_integers.cc` 实现为：
+
+```C++
+#include "wrapping_integers.hh"
+
+using namespace std;
+
+Wrap32 Wrap32::wrap( uint64_t n, Wrap32 zero_point )
+{
+  // Your code here.
+  return Wrap32 { Wrap32(n) + zero_point.raw_value_  };
+}
+
+uint64_t Wrap32::unwrap( Wrap32 zero_point, uint64_t checkpoint ) const
+// 转换为从0开始的绝对编号
+{
+  // Your code here.
+  // checkpoint = 前32位+left
+  // 与checkpoint最近的可能有两个数（分布在checkpoint一左一右） 其中一个必定是 前32位+offset
+  // 如果offset < left  那么另一个必定比checkpoint大 等于前32位+zero_point+0x1 0000 0000
+  // 那么就要看checkpoint 更接近前32位+zero_point 还是前32位+zero_point+0x1 0000 0000
+  // 两边同减去前32位和zero_point 就是看 left-point 更接近0 还是0x 1 0000 0000
+  uint64_t offset = (raw_value_+0x1'0000'0000-zero_point.raw_value_)%0x1'0000'0000;
+  uint32_t left = checkpoint % 0x1'0000'0000;
+  uint64_t high32 = checkpoint - left;
+//  if( offset == left) {
+//    return high32+checkpoint;
+//  } else if ( offset < left){
+  if(offset < left){
+    if(left- offset <= 0x8000'0000) { // 更接近前32位+zero_point
+      return high32+ offset;
+    } else {
+      return high32+ offset +0x1'0000'0000;
+    }
+  } else {
+  // 同上，offset > left 那么另一个一定比check_point 小 等于前32位+zero_point-0x1 0000 0000
+  if( high32 == 0 || offset -left <= 0x8000'0000) { // 更接近前32位+zero_point
+    return high32+ offset;
+  } else {
+    return high32+ offset -0x1'0000'0000;
+  }
+  }
+
+}
+
+```
+
+## Implementing the TCP receiver
+
+接下来我们就可以实现 TCP receiver 了，实验过程中注意区分五个序号的概念，很容易搞混。另有几个关键逻辑值得一提：
+
+- 如果收到 RST，需要将向内存字节流报告出错（很奇怪为啥 `set_eroor` 方法是 `Reader` 而不是 `Writer` 的）；
+- 收到 SYN 后更新 `zero_point` 和 `ack_`；
+- 只有收到 SYN 后才能开始接收数据；
+- 向包重组器发送数据后，根据内存中写入的数据量可以得到第一个待接收的数据的序号，进而更新 `ack_`；
+- 如果数据全部接收完毕，`ack_` 更新时还要额外 +1（FIN 占了一个序号），接收完毕需要根据 `writer.is_closed` 来判断;
+
+`TCP_receiver` 实现如下：
+
+```C++
+#include "tcp_receiver.hh"
+
+using namespace std;
+
+void TCPReceiver::receive( TCPSenderMessage message )
+{
+  // Your code here.
+  if(message.RST) {
+    reader().set_error();
+    return;
+  }
+  if(message.SYN){
+    zero_point_ = Wrap32(message.seqno);
+    ack_.emplace(message.seqno);
+  }
+  if(ack_.has_value()) {
+    const uint64_t check_point = writer().bytes_pushed()+1;
+    uint64_t first_index
+      = Wrap32( message.SYN ? message.seqno + 1 : message.seqno ).unwrap( zero_point_, check_point )-1;
+    reassembler_.insert( first_index, std::move(message.payload), message.FIN );
+    ack_ = ack_->wrap(writer().bytes_pushed()+1+writer().is_closed() , zero_point_);
+  }
+}
+
+TCPReceiverMessage TCPReceiver::send() const
+{
+  // Your code here.
+  return {ack_,
+           static_cast<uint16_t>(min(reassembler_.writer().available_capacity(), static_cast<uint64_t>(UINT16_MAX))),
+           reader().has_error()};
+}
+
+```

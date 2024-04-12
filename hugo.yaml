@@ -53,9 +53,11 @@ params:
     - name: Archive
       url: /archive
     - name: 建站日志
-      url: /建站日志
+      url: /logs
     - name: 技术笔记
-      url: /技术笔记
+      url: /notes
+    - name: 杂谈
+      url: /thoughts
   socialIcons: # profile页面展示的社交信息
   - name: "zhihu"
     url: "https://www.zhihu.com/people/LittleHerozzzx"

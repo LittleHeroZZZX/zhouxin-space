@@ -1,0 +1,31 @@
+---
+名称: Blog更新日志
+tags: 
+date: 2024-04-02T12:26:00+08:00
+lastmod: 2024-04-12T11:44:00+08:00
+publish: true
+dir: logs
+slug: blog logs
+---
+
+## 2024-04-12
+
+- 修改 dir 和 slug 为英文
+
+## 2024-04-08
+
+- IPC 备案完毕，启用域名 [zhouxin.space](https://www.zhouxin.space/)
+- 添加全站访问量统计和博文阅读量统计
+- 修改 404 页面
+- 配置 https
+- 使用 nginx 反向代理
+
+## 2024-04-03
+
+本站上线
+
+- 基于 Hugo 构建和 PaperMod 主题
+- 实现菜单中的搜索、标签和归档
+- 图片资源保存在阿里云 OSS
+- 修改字体为霞鹜文楷
+

@@ -1,8 +1,8 @@
 ---
-名称: Blog更新日志
+title: Blog更新日志
 tags: 
 date: 2024-04-02T12:26:00+08:00
-lastmod: 2024-04-12T11:44:00+08:00
+lastmod: 2024-04-12T11:48:00+08:00
 publish: true
 dir: logs
 slug: blog logs

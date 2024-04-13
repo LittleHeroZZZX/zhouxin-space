@@ -6,7 +6,7 @@ tags:
   - TCP
   - Cpp
 date: 2023-03-30T19:33:00+08:00
-lastmod: 2024-04-12T11:42:00+08:00
+lastmod: 2024-04-13T16:20:00+08:00
 publish: true
 dir: notes
 math: "true"
@@ -463,4 +463,330 @@ TCPReceiverMessage TCPReceiver::send() const
            reader().has_error()};
 }
 
+```
+
+运行结果为：
+
+```text
+-- Building in 'Debug' mode.
+-- Configuring done (0.3s)
+-- Generating done (0.1s)
+-- Build files have been written to: /home/zhouxin/projects/CS144/build
+Test project /home/zhouxin/projects/CS144/build
+      Start  1: compile with bug-checkers
+ 1/29 Test  #1: compile with bug-checkers ........   Passed   19.75 sec
+      Start  3: byte_stream_basics
+ 2/29 Test  #3: byte_stream_basics ...............   Passed    0.01 sec
+      Start  4: byte_stream_capacity
+ 3/29 Test  #4: byte_stream_capacity .............   Passed    0.01 sec
+      Start  5: byte_stream_one_write
+ 4/29 Test  #5: byte_stream_one_write ............   Passed    0.01 sec
+      Start  6: byte_stream_two_writes
+ 5/29 Test  #6: byte_stream_two_writes ...........   Passed    0.01 sec
+      Start  7: byte_stream_many_writes
+ 6/29 Test  #7: byte_stream_many_writes ..........   Passed    0.06 sec
+      Start  8: byte_stream_stress_test
+ 7/29 Test  #8: byte_stream_stress_test ..........   Passed    0.05 sec
+      Start  9: reassembler_single
+ 8/29 Test  #9: reassembler_single ...............   Passed    0.01 sec
+      Start 10: reassembler_cap
+ 9/29 Test #10: reassembler_cap ..................   Passed    0.01 sec
+      Start 11: reassembler_seq
+10/29 Test #11: reassembler_seq ..................   Passed    0.01 sec
+      Start 12: reassembler_dup
+11/29 Test #12: reassembler_dup ..................   Passed    0.05 sec
+      Start 13: reassembler_holes
+12/29 Test #13: reassembler_holes ................   Passed    0.01 sec
+      Start 14: reassembler_overlapping
+13/29 Test #14: reassembler_overlapping ..........   Passed    0.01 sec
+      Start 15: reassembler_win
+14/29 Test #15: reassembler_win ..................   Passed    0.15 sec
+      Start 16: wrapping_integers_cmp
+15/29 Test #16: wrapping_integers_cmp ............   Passed    0.04 sec
+      Start 17: wrapping_integers_wrap
+16/29 Test #17: wrapping_integers_wrap ...........   Passed    0.01 sec
+      Start 18: wrapping_integers_unwrap
+17/29 Test #18: wrapping_integers_unwrap .........   Passed    0.01 sec
+      Start 19: wrapping_integers_roundtrip
+18/29 Test #19: wrapping_integers_roundtrip ......   Passed    0.56 sec
+      Start 20: wrapping_integers_extra
+19/29 Test #20: wrapping_integers_extra ..........   Passed    0.12 sec
+      Start 21: recv_connect
+20/29 Test #21: recv_connect .....................   Passed    0.01 sec
+      Start 22: recv_transmit
+21/29 Test #22: recv_transmit ....................   Passed    0.12 sec
+      Start 23: recv_window
+22/29 Test #23: recv_window ......................   Passed    0.01 sec
+      Start 24: recv_reorder
+23/29 Test #24: recv_reorder .....................   Passed    0.04 sec
+      Start 25: recv_reorder_more
+24/29 Test #25: recv_reorder_more ................   Passed    0.36 sec
+      Start 26: recv_close
+25/29 Test #26: recv_close .......................   Passed    0.04 sec
+      Start 27: recv_special
+26/29 Test #27: recv_special .....................   Passed    0.04 sec
+      Start 37: compile with optimization
+27/29 Test #37: compile with optimization ........   Passed    1.93 sec
+      Start 38: byte_stream_speed_test
+             ByteStream throughput: 18.15 Gbit/s
+28/29 Test #38: byte_stream_speed_test ...........   Passed    0.06 sec
+      Start 39: reassembler_speed_test
+             Reassembler throughput: 9.03 Gbit/s
+29/29 Test #39: reassembler_speed_test ...........   Passed    0.11 sec
+
+100% tests passed, 0 tests failed out of 29
+
+Total Test time (real) =  23.60 sec
+Built target check2
+```
+
+# Lab 3
+
+Lab 3 要求实现一个 sender，这里实现了 TCP 的超时重传和拥塞控制算法。需要实现如下几个方法：
+
+- `uint64_t TCPSender::sequence_numbers_in_flight() const`：返回待确认的字节数
+- `uint64_t TCPSender::consecutive_retransmissions() const`：返回连续重传报文的数目
+- `void TCPSender::push( const TransmitFunction& transmit )`：从内存字节流中读取待发送数据，尽可能填满接收窗口
+- `TCPSenderMessage TCPSender::make_empty_message() const`：产生一条不占用序号的空消息
+- `void TCPSender::receive( const TCPReceiverMessage& msg )`：接收来自接受者的确认消息，维护接收窗口的大小
+- `void TCPSender::tick( uint64_t ms_since_last_tick, const TransmitFunction& transmit )`：根据外部传入的时间判断是否需要重传和进行拥塞控制
+
+在实现 `push` 的过程中，有如下值得注意的地方：
+
+- 使用字段 `current_seq_` 记录当前需要发送的序号，第一次建立连接（current_seq_=0）时，需要将 `SYN` 字段设置为 `true`；
+- `push` 方法仅用于首次发送消息，发送过的所有消息都保存在一个队列中，等待重传或者确认。在发送过 `FIN` 报文后，`push` 方法不应再发送任何消息，报文重传由 `tick` 方法负责；
+- 原文提到，若接收窗口为 0，则在发送报文时应该视为 1；
+- `push` 方法应该存在一个循环，用于处理接收窗口很大，待发送数据超过单个 TCP 包上限，需要发送多个包的情况；
+
+剩余部分跟着文档逻辑写，面向测试用例 debug。我在 `tcp_sender.hh` 中使用了如下成员变量：
+
+```C++
+ByteStream input_;
+Wrap32 isn_;
+uint64_t initial_RTO_ms_;
+uint64_t current_time_;
+uint64_t ack_;
+uint64_t in_flight_cnt_;
+uint64_t expire_time_;
+uint64_t retrans_cnt_;
+uint64_t window_size_;
+uint64_t rto_;
+uint64_t current_seq_;
+Wrap32 zero_point_;
+std::deque<TCPSenderMessage> outstanding_msg_;
+bool is_fin_sent;
+```
+
+`tcp_sender.cc` 各函数实现如下：
+
+```C++
+#include "tcp_sender.hh"
+#include "tcp_config.hh"
+
+using namespace std;
+
+uint64_t TCPSender::sequence_numbers_in_flight() const
+{
+  // Your code here.
+  return in_flight_cnt_;
+}
+
+uint64_t TCPSender::consecutive_retransmissions() const
+{
+  // Your code here.
+  return retrans_cnt_;
+}
+
+void TCPSender::push( const TransmitFunction& transmit )
+{
+  // Your code here.
+  bool window_zero = window_size_ == 0;
+  uint64_t available_window
+    = ( window_size_ + window_zero ) < in_flight_cnt_ ? 0 : window_size_ + window_zero - in_flight_cnt_;
+  do {
+    // 先考虑SYN和RST，FIN要等到把buffer读空才能判断
+    if ( is_fin_sent )
+      return;
+    uint64_t pay_load_size = min( reader().bytes_buffered(), TCPConfig::MAX_PAYLOAD_SIZE );
+    uint64_t seq_size = min( available_window, pay_load_size + ( current_seq_ == 0 ) );
+    pay_load_size = seq_size;
+    TCPSenderMessage msg = TCPSenderMessage();
+    if ( current_seq_ == 0 ) {
+      msg.SYN = true;
+      pay_load_size--;
+    }
+    if ( reader().has_error() ) {
+      msg.RST = true;
+    }
+
+    while ( msg.payload.size() < pay_load_size ) {
+      string_view front_view = reader().peek();
+      uint64_t bytes_to_read = min( front_view.size(), pay_load_size - msg.payload.size() );
+      msg.payload += front_view.substr( 0, bytes_to_read );
+      input_.reader().pop( bytes_to_read );
+    }
+    if ( reader().is_finished() && seq_size < available_window ) {
+      msg.FIN = true;
+      seq_size++;
+      is_fin_sent = true;
+    }
+    if ( msg.sequence_length() == 0 )
+      return;
+    msg.seqno = Wrap32::wrap( current_seq_, zero_point_ );
+    current_seq_ += msg.sequence_length();
+    in_flight_cnt_ += msg.sequence_length();
+    outstanding_msg_.push_back( msg );
+    transmit( msg );
+    if ( expire_time_ == UINT64_MAX )
+      expire_time_ = current_time_ + rto_;
+    available_window
+      = ( window_size_ + window_zero ) < in_flight_cnt_ ? 0 : window_size_ + window_zero - in_flight_cnt_;
+  } while ( reader().bytes_buffered() != 0 && available_window != 0 );
+}
+
+TCPSenderMessage TCPSender::make_empty_message() const
+{
+  // Your code here.
+  return { Wrap32::wrap( current_seq_, zero_point_ ), false, string(), false, reader().has_error() };
+}
+
+void TCPSender::receive( const TCPReceiverMessage& msg )
+{
+  // Your code here.
+  if ( msg.ackno.has_value() ) {
+    uint64_t ack_from_recv = unwarp( msg.ackno.value() );
+    if ( ack_from_recv > ack_ && ack_from_recv <= current_seq_ ) {
+      ack_ = ack_from_recv;
+      rto_ = initial_RTO_ms_;
+      expire_time_ = current_time_ + rto_;
+      retrans_cnt_ = 0;
+      while ( !outstanding_msg_.empty() ) {
+        auto& front_msg = outstanding_msg_.front();
+        if ( unwarp( front_msg.seqno ) + front_msg.sequence_length() > ack_ )
+          break;
+        in_flight_cnt_ -= front_msg.sequence_length();
+        outstanding_msg_.pop_front();
+      }
+      if ( outstanding_msg_.empty() ) {
+        expire_time_ = UINT64_MAX;
+      }
+    }
+  }
+  window_size_ = msg.window_size;
+  if ( msg.RST )
+    writer().set_error();
+}
+
+void TCPSender::tick( uint64_t ms_since_last_tick, const TransmitFunction& transmit )
+{
+  // Your code here.
+  current_time_ += ms_since_last_tick;
+  if ( expire_time_ != 0 && current_time_ >= expire_time_ ) {
+    transmit( outstanding_msg_.front() );
+    //  auto msg = outstanding_msg_.front();
+    //  outstanding_msg_.pop_front();
+    //  outstanding_msg_.push_back(msg);
+    //  transmit(msg);
+
+    if ( window_size_ != 0 ) {
+      retrans_cnt_++;
+      rto_ *= 2;
+    }
+    expire_time_ = current_time_ + rto_;
+  }
+}
+uint64_t TCPSender::unwarp( const Wrap32& seq )
+{
+  return seq.unwrap( zero_point_, ack_ );
+}
+
+```
+
+运行结果为：
+
+```text
+-- Building in 'Debug' mode.
+-- Configuring done (0.3s)
+-- Generating done (0.3s)
+-- Build files have been written to: /home/zhouxin/projects/CS144/build
+Test project /home/zhouxin/projects/CS144/build
+      Start  1: compile with bug-checkers
+ 1/36 Test  #1: compile with bug-checkers ........   Passed   40.66 sec
+      Start  3: byte_stream_basics
+ 2/36 Test  #3: byte_stream_basics ...............   Passed    0.02 sec
+      Start  4: byte_stream_capacity
+ 3/36 Test  #4: byte_stream_capacity .............   Passed    0.01 sec
+      Start  5: byte_stream_one_write
+ 4/36 Test  #5: byte_stream_one_write ............   Passed    0.01 sec
+      Start  6: byte_stream_two_writes
+ 5/36 Test  #6: byte_stream_two_writes ...........   Passed    0.01 sec
+      Start  7: byte_stream_many_writes
+ 6/36 Test  #7: byte_stream_many_writes ..........   Passed    0.05 sec
+      Start  8: byte_stream_stress_test
+ 7/36 Test  #8: byte_stream_stress_test ..........   Passed    0.05 sec
+      Start  9: reassembler_single
+ 8/36 Test  #9: reassembler_single ...............   Passed    0.01 sec
+      Start 10: reassembler_cap
+ 9/36 Test #10: reassembler_cap ..................   Passed    0.01 sec
+      Start 11: reassembler_seq
+10/36 Test #11: reassembler_seq ..................   Passed    0.01 sec
+      Start 12: reassembler_dup
+11/36 Test #12: reassembler_dup ..................   Passed    0.05 sec
+      Start 13: reassembler_holes
+12/36 Test #13: reassembler_holes ................   Passed    0.01 sec
+      Start 14: reassembler_overlapping
+13/36 Test #14: reassembler_overlapping ..........   Passed    0.01 sec
+      Start 15: reassembler_win
+14/36 Test #15: reassembler_win ..................   Passed    0.17 sec
+      Start 16: wrapping_integers_cmp
+15/36 Test #16: wrapping_integers_cmp ............   Passed    0.04 sec
+      Start 17: wrapping_integers_wrap
+16/36 Test #17: wrapping_integers_wrap ...........   Passed    0.01 sec
+      Start 18: wrapping_integers_unwrap
+17/36 Test #18: wrapping_integers_unwrap .........   Passed    0.01 sec
+      Start 19: wrapping_integers_roundtrip
+18/36 Test #19: wrapping_integers_roundtrip ......   Passed    0.55 sec
+      Start 20: wrapping_integers_extra
+19/36 Test #20: wrapping_integers_extra ..........   Passed    0.12 sec
+      Start 21: recv_connect
+20/36 Test #21: recv_connect .....................   Passed    0.01 sec
+      Start 22: recv_transmit
+21/36 Test #22: recv_transmit ....................   Passed    0.13 sec
+      Start 23: recv_window
+22/36 Test #23: recv_window ......................   Passed    0.01 sec
+      Start 24: recv_reorder
+23/36 Test #24: recv_reorder .....................   Passed    0.04 sec
+      Start 25: recv_reorder_more
+24/36 Test #25: recv_reorder_more ................   Passed    0.39 sec
+      Start 26: recv_close
+25/36 Test #26: recv_close .......................   Passed    0.04 sec
+      Start 27: recv_special
+26/36 Test #27: recv_special .....................   Passed    0.04 sec
+      Start 28: send_connect
+27/36 Test #28: send_connect .....................   Passed    0.04 sec
+      Start 29: send_transmit
+28/36 Test #29: send_transmit ....................   Passed    0.18 sec
+      Start 30: send_retx
+29/36 Test #30: send_retx ........................   Passed    0.04 sec
+      Start 31: send_window
+30/36 Test #31: send_window ......................   Passed    0.07 sec
+      Start 32: send_ack
+31/36 Test #32: send_ack .........................   Passed    0.04 sec
+      Start 33: send_close
+32/36 Test #33: send_close .......................   Passed    0.04 sec
+      Start 34: send_extra
+33/36 Test #34: send_extra .......................   Passed    0.05 sec
+      Start 37: compile with optimization
+34/36 Test #37: compile with optimization ........   Passed    2.29 sec
+      Start 38: byte_stream_speed_test
+             ByteStream throughput: 19.14 Gbit/s
+35/36 Test #38: byte_stream_speed_test ...........   Passed    0.06 sec
+      Start 39: reassembler_speed_test
+             Reassembler throughput: 8.26 Gbit/s
+36/36 Test #39: reassembler_speed_test ...........   Passed    0.12 sec
+
+100% tests passed, 0 tests failed out of 36
+
+Total Test time (real) =  45.37 sec
+Built target check3
 ```

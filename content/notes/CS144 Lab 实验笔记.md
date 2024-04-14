@@ -6,7 +6,7 @@ tags:
   - TCP
   - Cpp
 date: 2023-03-30T19:33:00+08:00
-lastmod: 2024-04-13T16:20:00+08:00
+lastmod: 2024-04-14T16:13:00+08:00
 publish: true
 dir: notes
 math: "true"
@@ -789,4 +789,186 @@ Test project /home/zhouxin/projects/CS144/build
 
 Total Test time (real) =  45.37 sec
 Built target check3
+```
+
+# Lab 4
+
+lab 4 的任务是使用我们之前写的 TCP 模块与外网进行通信，如果前面实现的都没问题，那么这里是不需要写代码的。按照文档指示执行，顺利通过测试，运行结果为：
+
+```text
+Test project /home/zhouxin/projects/CS144/build
+    Start 1: compile with bug-checkers
+1/2 Test #1: compile with bug-checkers ........   Passed    0.11 sec
+    Start 2: t_webget
+2/2 Test #2: t_webget .........................   Passed    1.03 sec
+```
+
+# Lab 5
+
+lab 5 实现了 ARP 协议，负责将 IP 地址转换为 MAC 地址，并发送来自传输层的报文。有如下细节值得注意：
+
+- 内存中需要维护一张 arp 表，每一个表项只有 30 秒的有效时间
+- 相同目标 ip 的 arp 请求间隔为 5 秒钟
+- 发送数据时，arp 表中没有对应记录，则先发出 arp 请求
+- 收到 arp 回复报文后，需要将等待该记录的所有报文全部发出
+
+实现过程中，我新增了三个数据结构：
+
+```C++
+// 当前时间
+size_t current_time_;
+
+// 保存arp表
+std::unordered_map<uint32_t , std::pair<EthernetAddress, size_t>> arp_table_;
+
+// 等待arp请求的信号量队列
+std::unordered_map<uint32_t ,std::pair<std::queue<EthernetFrame>, std::optional<size_t>>> frame_queue_;
+```
+
+arp 表每一条的有效时间只有 30 秒，因此每一行都要记录 ip 地址对应的 mac 地址和过期时间；在发送报文的方法中，如果目标 ip 的 mac 地址还不知道，则先把数据报插入到等待队列中，等待收到 arp 回复报文再发送报文（本质上是使用信号量实现同步关系）；此外，还要记录目标 ip 上次 arp 请求的时间，防止对同一个 ip 请求过于频繁。
+
+实现 `send_datagram` 的逻辑为：首先填写数据帧中除目标 MAC 之外的字段，然后查询 arp 表，如果存在目标 ip 的有效条目，则填写 MAC 并发送；否则将待发送帧放入目标 ip 对应的队列，并发出 arp 请求。
+
+实现 `recv_frame` 的逻辑为：首先根据 MAC 字段判断是否是发给自己的数据帧，只处理目标为自己或者广播地址的帧。然后根据类型字段对有效载荷解析，如果是 ip 包直接把解析包交付给上层队列；如果是 arp 包则根据协议头将更新 arp 表，如果收到的是 arp 请求报文，则构造 arp 回复报文回复自己的 mac，如果收到的是 arp 回复报文，则查看对应 ip 的待发送消息的队列，发送其中所有的消息。
+
+详细实现的代码为：
+
+```C++
+#include <iostream>
+
+#include "arp_message.hh"
+#include "exception.hh"
+#include "network_interface.hh"
+
+using namespace std;
+
+//! \param[in] ethernet_address Ethernet (what ARP calls "hardware") address of the interface
+//! \param[in] ip_address IP (what ARP calls "protocol") address of the interface
+NetworkInterface::NetworkInterface( string_view name,
+                                    shared_ptr<OutputPort> port,
+                                    const EthernetAddress& ethernet_address,
+                                    const Address& ip_address )
+  : name_( name )
+  , port_( notnull( "OutputPort", move( port ) ) )
+  , ethernet_address_( ethernet_address )
+  , ip_address_( ip_address )
+  , current_time_(0)
+  , arp_table_()
+  , frame_queue_()
+{
+  cerr << "DEBUG: Network interface has Ethernet address " << to_string( ethernet_address ) << " and IP address "
+       << ip_address.ip() << "\n";
+}
+
+//! \param[in] dgram the IPv4 datagram to be sent
+//! \param[in] next_hop the IP address of the interface to send it to (typically a router or default gateway, but
+//! may also be another host if directly connected to the same network as the destination) Note: the Address type
+//! can be converted to a uint32_t (raw 32-bit IP address) by using the Address::ipv4_numeric() method.
+void NetworkInterface::send_datagram( const InternetDatagram& dgram, const Address& next_hop )
+{
+  // Your code here.
+  EthernetFrame messsage = EthernetFrame();
+  const uint32_t target_ip = next_hop.ipv4_numeric();
+  messsage.header.src = ethernet_address_;
+  messsage.header.type = EthernetHeader::TYPE_IPv4;
+  messsage.payload = serialize(dgram);
+  if(!arp_table_.contains(target_ip) || arp_table_[target_ip].second < current_time_){
+    frame_queue_[target_ip].first.push(std::move(messsage));
+    EthernetFrame arp_request_frame;
+    send_arp_request( target_ip, arp_request_frame );
+    return;
+  } else {
+    messsage.header.dst = arp_table_[target_ip].first;
+    transmit(messsage);
+  }
+}
+void NetworkInterface::send_arp_request( const uint32_t target_ip, EthernetFrame& arp_request_frame )
+{
+  if(frame_queue_.contains(target_ip) && frame_queue_[target_ip].second.has_value()
+       && frame_queue_[target_ip].second >= current_time_)
+    return;
+  arp_request_frame.header.type = EthernetHeader::TYPE_ARP;
+  arp_request_frame.header.dst = ETHERNET_BROADCAST;
+  arp_request_frame.header.src = ethernet_address_;
+  ARPMessage arp_request_message = ARPMessage();
+  arp_request_message.sender_ethernet_address = ethernet_address_;
+  arp_request_message.sender_ip_address = ip_address_.ipv4_numeric();
+  arp_request_message.opcode = ARPMessage::OPCODE_REQUEST;
+  arp_request_message.target_ip_address = target_ip;
+//  arp_request_message.target_ethernet_address = ETHERNET_BROADCAST;
+  arp_request_frame.payload = serialize(arp_request_message);
+  transmit(arp_request_frame);
+  frame_queue_[target_ip].second = current_time_ + 5000;
+}
+
+//! \param[in] frame the incoming Ethernet frame
+void NetworkInterface::recv_frame( const EthernetFrame& frame )
+{
+  // Your code here.
+  if(frame.header.dst == ethernet_address_ || frame.header.dst == ETHERNET_BROADCAST){
+    if(frame.header.type == EthernetHeader::TYPE_ARP){
+      ARPMessage message = ARPMessage();
+      if(parse(message, frame.payload) && message.target_ip_address == ip_address_.ipv4_numeric()) {
+        arp_table_[message.sender_ip_address] = make_pair(message.sender_ethernet_address, current_time_+30000);
+        if(message.opcode == ARPMessage::OPCODE_REQUEST){
+          EthernetFrame response = EthernetFrame();
+          make_arp_response( message, response );
+          transmit(response);
+        } else {
+          // 收到arp回复之后看对应ip有无待发送的消息
+          queue<EthernetFrame>& ip_queue = frame_queue_[message.sender_ip_address].first;
+          while (!ip_queue.empty()){
+            ip_queue.front().header.dst = message.sender_ethernet_address;
+            transmit(ip_queue.front());
+            ip_queue.pop();
+          }
+        }
+      }
+
+    } else if(frame.header.type == EthernetHeader::TYPE_IPv4){
+      InternetDatagram message = InternetDatagram();
+      if(parse(message, frame.payload)){
+        datagrams_received_.emplace(std::move(message));
+      }
+    }
+  }
+}
+void NetworkInterface::make_arp_response( const ARPMessage& message, EthernetFrame& response ) const
+{
+  EthernetHeader& header = response.header;
+  header.dst = message.sender_ethernet_address;
+  header.src = ethernet_address_;
+  header.type = EthernetHeader::TYPE_ARP;
+  ARPMessage arp_response_message = ARPMessage();
+  arp_response_message.opcode = ARPMessage::OPCODE_REPLY;
+  arp_response_message.sender_ethernet_address = ethernet_address_;
+  arp_response_message.sender_ip_address = ip_address_.ipv4_numeric();
+  arp_response_message.target_ethernet_address = message.sender_ethernet_address;
+  arp_response_message.target_ip_address = message.sender_ip_address;
+  response.payload = serialize(arp_response_message);
+  return;
+}
+
+//! \param[in] ms_since_last_tick the number of milliseconds since the last call to this method
+void NetworkInterface::tick( const size_t ms_since_last_tick )
+{
+  // Your code here.
+  current_time_ += ms_since_last_tick;
+}
+
+```
+
+运行结果为：
+
+```text
+Test project /home/zhouxin/projects/CS144/build
+    Start  1: compile with bug-checkers
+1/2 Test  #1: compile with bug-checkers ........   Passed    8.79 sec
+    Start 35: net_interface
+2/2 Test #35: net_interface ....................   Passed    0.01 sec
+
+100% tests passed, 0 tests failed out of 2
+
+Total Test time (real) =   8.80 sec
+Built target check5
 ```

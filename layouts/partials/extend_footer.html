@@ -1,22 +1,25 @@
 {{- if not (.Param "hideCustumFooter") }}
 <footer class="footer">
   <div>
-    <span id="busuanzi_container_site_pv">
-      本站总访问量<span id="busuanzi_value_site_pv"></span>次
+      本站总访问量<span id="qiushaocloud_sitecounter_value_site_pv">n</span>次 &nbsp;
+      本站今日访问量<span id="qiushaocloud_sitecounter_value_today_site_pv">n</span>次</p>
+  </div>
+  <div>
+    <span>
+      <a href="https://beian.miit.gov.cn" style="border-bottom: none;">浙ICP备2024085492号-1</a> &nbsp;
+      <a href="https://beian.mps.gov.cn/#/query/webSearch?code=33019202002423" style="border-bottom: none;" target="_blank" rel="noopener noreferrer">浙公网安备33019202002423号</a>
     </span>
-    |
-    <span><a href="https://beian.miit.gov.cn">浙ICP备2024085492号</a></span>
   </div>
   {{- if site.Copyright }}
   <span>{{ site.Copyright | markdownify }}</span>
   {{- else }}
-  <span>&copy; {{ now.Year }} <a href="{{ "" | absLangURL }}">{{ site.Title }}</a></span>
+  <span>&copy; {{ now.Year }} <a href="{{ "" | absLangURL }}" style="border-bottom: none;">{{ site.Title }}</a></span>
   {{- end }}
-  |
+  &nbsp;
   <span>
     Powered by
-    <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
-    <a href="https://github.com/adityatelange/hugo-PaperMod/" rel="noopener" target="_blank">PaperMod</a>
+    <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank" style="border-bottom: none;">Hugo</a> &
+    <a href="https://github.com/adityatelange/hugo-PaperMod/" rel="noopener" target="_blank" style="border-bottom: none;">PaperMod</a>
   </span>
   
 </footer>

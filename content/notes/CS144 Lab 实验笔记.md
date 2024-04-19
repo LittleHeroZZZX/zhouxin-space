@@ -17,10 +17,10 @@ slug: CS144 winter 2024 labs
 
 本次实验使用的课程代码版本为 CS144 Winter 2024，鉴于 CS144 官方要求禁止公开代码以防止抄袭，我将我的题解和原始代码存档放在了 Gitee 上（外国学生应该不知道这个平台吧），有需要可自取：[CS144: CSS144 Winter 2024 Labs.](https://gitee.com/littleherozzzx/CS144)。另外，我还托管了课程主页的镜像，各个资源链接如下：
 
-| 名称         | 链接                                                                                                             | 备注                                                             |
-| ---------- | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| 原始代码和题解    | [CS144: CSS144 Winter 2024 Labs.](https://gitee.com/littleherozzzx/CS144)                                      | 原始代码在 archive 分支，题解在 main 分支                                   |
-| 课程主页镜像     | [CS 144: Introduction to Computer Networking](https://littleherozzzx.github.io/cs144Winter2024.github.io/)                             |                                                                |
+| 名称         | 链接                                                                                                             | 备注                                                               |
+| ---------- | -------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
+| 原始代码和题解    | [CS144: CSS144 Winter 2024 Labs.](https://gitee.com/littleherozzzx/CS144)                                      | 原始代码在 archive 分支，题解在 main 分支                                     |
+| 课程主页镜像     | [CS 144: Introduction to Computer Networking](https://littleherozzzx.github.io/cs144Winter2024.github.io/)     |                                                                  |
 | 虚拟机镜像和配置过程 | [Setting up your CS144 VM using VirtualBox](https://web.stanford.edu/class/cs144/vm_howto/vm-howto-image.html) | 百度云链接：<https://pan.baidu.com/s/1s7xWKn5ccph64--rdJOz6g?pwd=ozb0> |
 
 ## 虚拟机镜像

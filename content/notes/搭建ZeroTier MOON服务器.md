@@ -50,14 +50,15 @@ sudo zerotier-idtool initmoon identity.public > moon.json
 
 使用 `vim` 等文本编辑工具修改刚刚生成的 `moon.json` 中 `"stableEndpoints"` 的值为服务器的公网 IPv4 地址：
 
-```sh {hl_lines=["
+``` sh
+{
  "id": "xxxxx", # 这个值后面用于其它设备配置moon
  "objtype": "world",
  "roots": [
   {
    "identity": "xxxx:0:eeee",
    "stableEndpoints": ["<IPv4 address>/9993"] # 修改这里<IPv4 address>替换为公网地址
-  "]}
+  }
  ],
  "signingKey": "asdfasdfasdf",
  "signingKey_SECRET": "asdfasdfasdfasd",

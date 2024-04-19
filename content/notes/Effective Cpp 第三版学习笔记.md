@@ -3,7 +3,7 @@ title: Effective Cpp 第三版学习笔记
 tags:
   - Cpp
 date: 2024-04-17T18:23:00+08:00
-lastmod: 2024-04-19T15:08:00+08:00
+lastmod: 2024-04-19T20:25:00+08:00
 publish: true
 dir: notes
 slug: notes on effective cpp 3rd ed
@@ -261,5 +261,55 @@ C++ 的类成员的初始化必须在构造函数主体前的初始化列表中�
 接下来作者举了一个例子，可以抽象为：一个翻译单元 A 的非静态局部对象的初始化过程引用了来自另一个翻译单元 B 的非局部静态对象，但是编译器并不能保证当 A 初始化时 B 中的非局部静态变量已经初始化。为了解决这个问题，我们可以引入设计模式中的单例模式，在 B 中定义一个全局函数或者在类定义中定义一个成员函数，用于初始化一个局部静态对象并返回其引用。
 
 但是，上述解决方案并不适用于多线程环境：同个线程可能同时初始化一个局部静态对象。可以通过在线程启动前手动调用每个返回局部静态对象的函数以完成初始化。  
+
+## Constructors, Destructors, and Assignment Operators
+
+### Know what functions C++ silently writes and calls. 
+
+> ✦ Compilers may implicitly generate a class’s default constructor, copy constructor, copy assignment operator, and destructor.
+
+默认情况下，编译器在**必要时**会生成 public 且 inline 的默认构造函数、析构函数、拷贝构造函数和拷贝赋值函数。编译器为一个类生成的所有函数都是非虚函数，唯一的例外是一个派生类的基类有一个虚析构函数，那么编译器会为其生成一个虚析构函数。否则，将无法通过基类指针/引用销毁派生对象。
+
+生成拷贝构造函数时，编译器会拷贝所有非静态成员。拷贝赋值函数原理与之类似，但是并非所有对象都可以被拷贝，例如私有对象、const 对象或者引用对象，这种情况下编译器就会拒绝生成拷贝构造函数。
+
+### Explicitly disallow the use of compiler- generated functions you do not want.
+
+> ✦ Compilers may implicitly generate a class’s default constructor, copy constructor, copy assignment operator, and destructor.
+
+有些类可能不允许有两个相同的对象，但语法/编译器并没有提供禁用生成拷贝构造和拷贝赋值的关键字。一种可能得实现是，将二者声明为私有的，这可以防止用户调用拷贝构造和赋值；此外，不要实现这两个私有函数，这可以防止友元函数和类成员函数调用。
+
+调用声明但没有定义的函数会在链接期出错，一种将其提前到编译器的办法是，定义一个描述不可拷贝的类 `Uncopyable`，其它类派生于它：
+
+```cpp
+class Uncopyable { 
+protected: // allow construction and destruction of derived objects... 
+	Uncopyable() {}
+	~Uncopyable() {}
+private: // ...but prevent copying 
+	Uncopyable(const Uncopyable&); 
+	Uncopyable& operator=(const Uncopyable&); 
+};
+
+class UncopyableThing: private Uncopyable{
+...
+};
+```
+
+`UncopyableThing` 中并没有 `Uncopyable` 对象，但上述方法可以其作用是因为：当编译器尝试生成拷贝函数时，其会调用基类拷贝函数（无论有无该对象）。
+
+### Declare destructors virtual in polymorphic base classes.
+
+> ✦ Polymorphic base classes should declare virtual destructors. If a class has any virtual functions, it should have a virtual destructor.  
+> ✦ Classes not designed to be base classes or not designed to be used polymorphically should not declare virtual destructors.
+
+如果我们使用基类指针释放派生对象，并且基类没有虚析构函数，那么会造成 partially destroyed 问题，即派生对象的基类被释放，而其派生部分内存泄漏。
+
+解决这个问题很简单，将基类析构函数声明为虚函数即可。含有虚方法的类大概率都是基类——这些方法都会在派生类中被重写，因此他们的析构函数必须为虚函数。
+
+为不含虚方法的类声明虚析构函数不是个好主意。虚函数在实现时需要额外占用内存（虚函数表指针指向虚函数表），导致原本可以正好装入寄存器的增大一倍（指针长度通常等于机器字长），同时还失去了与 C 语言的兼容性。
+
+值得注意的是，STL 中所有的容器的析构函数都是非虚的，因此不要把他们当做基类（C++11 中引入了 `final` 关键字）。
+
+如果将析构函数声明为纯虚函数，则必须要在派生类中实现抽象基类的析构函数，这是由于当派生类析构调用结束后，会调用基类的析构函数。
 
 # 参考文档

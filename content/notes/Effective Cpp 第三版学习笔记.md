@@ -97,7 +97,7 @@ GPT 对以上几种编程范式的介绍：
 - 如果需要定义一个指向常量的指针，大部分情况这个这个指针本身也是不可更改指向的，即指向常量的常量指针，需要两个 `const` 关键字，即：`const char* const name = "Name"`。
 - 对于类成员是常量的情况，还要声明为静态变量以防止在内存中存在多个常量拷贝，即：
 
-```C++ {hl_lines=[3]}
+```C++ {hl_lines=["3"]}
 class GamePlayer{
 private:
 	static const  int NumTurns = 5;
@@ -230,7 +230,7 @@ cin >> d;
 
 注意区分构造函数中的初始化和赋值：
 
-```C++ {hl_lines=[12-15]}
+```C++ {hl_lines=["12-15"]}
 class PhoneNumber { ... };
 class ABEntry { // ABEntry = “Address Book Entry” 
 public: 

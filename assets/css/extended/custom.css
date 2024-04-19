@@ -17,3 +17,8 @@
   padding: 4px 4px;
   border-radius: 4px;
 }
+.post-content blockquote{
+  color: #6a6a6a;
+  border-inline-start: 3px solid #16A951;
+  font-style: italic;
+}

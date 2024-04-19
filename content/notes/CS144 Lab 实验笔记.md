@@ -5,8 +5,8 @@ tags:
   - CS144
   - TCP
   - Cpp
-date: 2023-03-30T19:33:00+08:00
-lastmod: 2024-04-14T16:13:00+08:00
+date: 2024-03-30T19:33:00+08:00
+lastmod: 2024-04-19T14:11:00+08:00
 publish: true
 dir: notes
 math: "true"
@@ -971,4 +971,69 @@ Test project /home/zhouxin/projects/CS144/build
 
 Total Test time (real) =   8.80 sec
 Built target check5
+```
+
+# Lab 6
+
+在 lab 6，我们将实现路由转发。具体来说，需要在内存中维护一张路由表，并根据路由表做最长匹配，进而实现网络层的转发。
+
+路由表比较理想的数据结构是前缀树，但建树的过程难免要用到智能指针，遂作罢。且文档中也说 O(n) 复杂度也是可接受的，因此我最终选择 `vector` 来保存路由表。路由表中，我没有保存前缀长度，而是将前缀长度转换为子网掩码，以方便后续匹配。
+
+匹配使用与运算进行，当且仅当 `ip & mask == prefix` 时，说明 `ip` 是匹配 `prefix` 的。一个 ip 可能匹配多个 prefix，可以根据 mask 的大小找到最长匹配。
+
+找到最长匹配后，如果路由表项中还有下一跳，则转发到下一跳 ip；如果没有下一跳，说明直接交付给指定 ip 即可，即转发到目标 ip。
+
+`route()` 的实现如下：
+
+```C++
+void Router::route()
+{
+  // Your code here.
+  for( auto& interface: _interfaces){
+    auto& data_queue = interface->datagrams_received();
+    while(!data_queue.empty()){
+      InternetDatagram &data = data_queue.front();
+      if(data.header.ttl == 0 || data.header.ttl == 1) {
+        data_queue.pop();
+        continue;
+      }
+      data.header.ttl -= 1;
+      data.header.compute_checksum();
+      uint32_t ip = data.header.dst;
+      optional<routing_item> best_match;
+      for(uint32_t i=0; i<routing_table_.size(); i++){
+        auto& item = routing_table_[i];
+        if(item.route_prefix_ == (ip & item.mask_)){
+          if(!best_match.has_value() || best_match->mask_ < item.mask_){
+            best_match = item;
+          }
+        }
+      }
+      if(best_match.has_value()){
+        auto &next_interface = _interfaces.at(best_match->interface_num_);
+        if(best_match->next_hop_.has_value()){
+          next_interface->send_datagram(data, best_match->next_hop_.value());
+        } else {
+          next_interface->send_datagram(data, Address::from_ipv4_numeric(data.header.dst));
+        }
+      }
+    data_queue.pop();
+    }
+  }
+}
+
+```
+
+运行结果为：
+
+```text
+Test project /home/zhouxin/projects/CS144/build
+    Start  1: compile with bug-checkers
+1/3 Test  #1: compile with bug-checkers ........   Passed    9.56 sec
+    Start 35: net_interface
+2/3 Test #35: net_interface ....................   Passed    0.02 sec
+    Start 36: router
+3/3 Test #36: router ...........................   Passed    0.01 sec
+
+100% tests passed, 0 tests failed out of 3
 ```

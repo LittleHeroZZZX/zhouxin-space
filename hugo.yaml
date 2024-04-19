@@ -12,13 +12,16 @@ buildDrafts: false
 buildFuture: false
 buildExpired: false
 enableEmoji: true
-pygmentsUseClasses: true
 pluralizelisttitles: false
+pygmentsUseClasses: true
+
 
 
 
 
 params:
+  assets:
+    disableHLJS: true
   ViewCount: true
   title: 周鑫的个人博客
   description: halo
@@ -84,19 +87,16 @@ menu:
       url: /404
       weight: 5
 markup:
+  highlight:
+    # anchorLineNos: true
+    codeFences: true
+    guessSyntax: true
+    lineNos: false
+    # noClasses: false
+    style: abap
   goldmark:
       renderer:
           unsafe: true # HUGO 默认转义 Markdown 文件中的 HTML 代码，如需开启的话
-  highlight:
-    codeFences: true
-    guessSyntax: false
-    hl_Lines: ""
-    lineNoStart: 1
-    lineNos: false
-    lineNumbersInTable: true
-    noClasses: true
-    style: monokai
-    tabWidth: 4
 
 defaultContentLanguage: zh
 

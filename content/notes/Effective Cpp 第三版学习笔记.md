@@ -3,7 +3,7 @@ title: Effective Cpp 第三版学习笔记
 tags:
   - Cpp
 date: 2024-04-17T18:23:00+08:00
-lastmod: 2024-04-21T21:32:00+08:00
+lastmod: 2024-04-23T16:12:00+08:00
 publish: true
 dir: notes
 slug: notes on effective cpp 3rd ed
@@ -543,5 +543,70 @@ if (obj1 + obj2 = obj3){ // 本意是obj1 + obj2 == obj3
 - 你的类有哪些“未声明的接口”？所谓未声明的接口，就是指出了表现出的接口之外，你的类还做出了哪些承诺和保证？例如性能、异常、资源使用等。
 - 你的类泛化性能如何？如果你的类想要泛化出一系列类，那你应该定义模板类。
 - 你真的需要一个类嘛？如果几个函数就能解决你的问题，那你实际上并不需要一个类。
+
+### Item 20: Prefer pass-by-reference-to-const to pass-by- value.
+
+> ✦ Prefer pass-by-reference-to-const over pass-by-value. It’s typically more efficient and it avoids the slicing problem. 
+> 
+> ✦ The rule doesn’t apply to built-in types and STL iterator and func- tion object types. For them, pass-by-value is usually appropriate.
+
+默认情况下，函数参数的传递方式为值传递，即实参通过拷贝构造作为形参传递给函数，当函数调用结束时，还需要调用形参的析构函数。这一过程需要浪费大量的时间。
+
+使用 const 引用传递可以避免上述重复的操作，即：
+
+```cpp
+int foo(const class_name& param);
+```
+
+`const` 关键字可以确保调用者传入的参数不被修改。引用则可以实现虚函数的动态绑定。
+
+对于大部分编译器而言，引用传递是通过指针来实现的，因此，对于一些内建类型，使用值传递的性能可能要优于引用传递。同样，对于 STL 中的迭代器，按值传递的性能优于引用传递。
+
+并不是说，一个类很小，所以它就适合按值传递。一个很小的类其拷贝构造函数也可能很耗时。例如，一个 vector 的指针，拷贝构造函数可能要执行深拷贝，它的运行代价是非常非常昂贵的。
+
+即便拷贝构造函数执行得很快，也并不意味着它适合按值传递。一些编译器区别对待内建类型和用户定义的类，后者即便再小也不允许被保存在一个寄存器中，这就隐含了性能问题。
+
+### Item 21: Don’t try to return a reference when you must return an object.
+
+> ✦ Never return a pointer or reference to a local stack object, a refer- ence to a heap-allocated object, or a pointer or reference to a local static object if there is a chance that more than one such object will be needed. (Item 4 provides an example of a design where returning a reference to a local static is reasonable, at least in single-threaded environments.)
+
+引用传递可以提高传递效率，但这并不意味着所有的函数传递都应该使用引用传递。使用引用传递的前提是被传递的对象确实存在。假设实现了一个有理数类 `Rational`，如果将 `operator *` 的返回类型定义为引用传递，那么在调用 `operator *` 前这个对象肯定是不存在的，这就要让函数来创建这个对象。
+
+函数有两种方式来创建一个对象：在栈上或者在堆上，前者会导致返回的引用对象会被销毁，后者会导致需要调用者手动销毁。即便用户记得销毁，如下代码仍然存在内存泄露：
+
+```cpp
+Rational x, y, z, product;
+product = x * y * z; // x*y返回的临时对象（在堆上）没有被释放
+...
+delete product;
+```
+
+接下来介绍一种奇淫巧技，通过静态变量来解决内存泄露问题：
+
+```cpp
+const Rational& operator*(const Rational& lhs, const Rational& rhs){
+	static Rational result;
+	result = ...
+	return result;
+}
+```
+
+上面这段代码很“巧妙”地规避了内存泄露问题，但除了很常见的静态变量多线程不安全问题外，`(a * b) == (c * d)` 这个表达式结果是恒 true 的！！
+
+### Item 22: Declare data members private.
+
+> ✦ Declare data members private. It gives clients syntactically uniform access to data, affords fine-grained access control, allows invariants to be enforced, and offers class authors implementation flexibility. 
+> 
+> ✦ protected is no more encapsulated than public.
+
+为什么不把数据类型声明为 public/protected：
+
+- 语法一致性：用户在调用接口/数据时，无需区分调用的是函数还是直接获取了成员变量。
+- 读写权限设置：通过函数获取/写入成员变量时，可以控制每个成员变量的读写权限。
+- 封装：通过对 getter 进行封装，如果需要修改 getter 的实现，用户代码也不需要更改。
+- 便于维护数据：可以防止客户程序直接修改数据变量，破坏结构。
+- 保留了修改的余地：如果后期需要重构这个类，只要保证仍提供相关接口即可，而不需要确保数据成员一定要存在。
+
+### Item 23: Prefer non-member non-friend functions to member functions.
 
 # 参考文档

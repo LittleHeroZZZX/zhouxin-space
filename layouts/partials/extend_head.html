@@ -16,6 +16,18 @@
         window.QIUSHAOCLOUD_SITE_COUNTER_API_SIGN_SECRET_KEY = 'site_count';
     </script>
 <script src="https://pics.zhouxin.space/js/qiushaocloud_site_counter.js"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        var header = document.querySelector('.profile_inner h1');
+        header.addEventListener('animationend', function(event) {
+          if (event.animationName === 'typing') {
+            // 停止光标闪烁
+            header.style.animation = 'none';
+          }
+        });
+      });
+      
+</script>
 
 
 

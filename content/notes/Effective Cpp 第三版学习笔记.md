@@ -3,7 +3,7 @@ title: Effective Cpp 第三版学习笔记
 tags:
   - Cpp
 date: 2024-04-17T18:23:00+08:00
-lastmod: 2024-04-23T16:12:00+08:00
+lastmod: 2024-04-28T20:54:00+08:00
 publish: true
 dir: notes
 slug: notes on effective cpp 3rd ed
@@ -608,5 +608,330 @@ const Rational& operator*(const Rational& lhs, const Rational& rhs){
 - 保留了修改的余地：如果后期需要重构这个类，只要保证仍提供相关接口即可，而不需要确保数据成员一定要存在。
 
 ### Item 23: Prefer non-member non-friend functions to member functions.
+
+> ✦ Prefer non-member non-friend functions to member functions. Do- ing so increases encapsulation, packaging flexibility, and functional extensibility.
+
+先聊聊封装。一个类封装程度越高，意味着其对外暴露的内容越少，同时意味着我们修改一个类的灵活性也就越高（因为只需要维护对外暴露的内容）。提高我们的灵活性，这就是为什么我们要进行封装。
+
+一个数据成员的封装程度越高，意味着它对外暴露得越少。评判一个数据成员对外暴露的程度，就是统计有类成员方法和友元方法引用了这个成员。
+
+因此，当一个需求既可以使用成员函数实现也可以使用非成员且非友元函数实现，最好使用后者，因为这不会降低数据成员的封装程度。
+
+假设我们实现了一个浏览器类 `WebBrowser`，及相应的清理历史记录、cookies、下载的文件等成员函数。如果我们想些一个 `clearAll` 函数，根据上面的原则，不应该使用成员函数来实现。
+
+就是说，我们可以定义一个函数来实现 clearAll，或者定义一个工具类并实现一个静态函数 clearAll，这在 Java 中更为常见。在 C++ 中，更地道的方法是将 `clearAll` 和 `WebBrowser` 定义在同一个 `namespace` 中：
+
+```cpp
+namespace WebBrowserStuff { 
+	class WebBrowser { ... }; 
+	void clearBrowser(WebBrowser& wb); 
+	... 
+}
+```
+
+得益于 `namespace` 跨文件的特性，可以将不同的类似 `clearAll` 的工具函数声明在不同的头文件中。
+
+### Item 24: Declare non-member functions when type conversions should apply to all parameters.
+
+> ✦ If you need type conversions on all parameters to a function (includ- ing the one that would otherwise be pointed to by the this pointer), the function must be a non-member.
+
+一般来说，让类支持隐式类型转换并不是个好主意，但凡事都有例外。例如，一个数值型的类要支持来自 `int` 的隐式转换是合理的。
+
+接下来，当我们实现加法时，多个选项摆在了面前：重载定义成员函数、定义非成员函数、定义友元函数。
+
+如果我们把他定义成一个成员函数，那么允许来自 `int` 的隐式转换时，`Rational * int` 是可以通过编译的，但是 `int * Rational` 是不可以的，因为 `int` 类型的 `operator *` 并不支持类型 `Rational` 的参数。这显然不够优雅，违反了乘法的交换律。
+
+一种解决方案定义非成员函数 `const Rational operator*(const Rational& lhs, const Rational& rhs)`，当任意一个参数为 `int` 时，编译器会将其隐式转换为 `Rational`。
+
+需求实现了，那么问题来了，要不要声明其为友元函数呢？如果可以，就不要声明为友元，因为友元会降低类的封装程度。
+
+### Item 25: Consider support for a non-throwing swap.
+
+> ✦ Provide a swap member function when std::swap would be inefficient for your type. Make sure your swap doesn’t throw exceptions. 
+> 
+> ✦ If you offer a member swap, also offer a non-member swap that calls the member. For classes (not templates), specialize std::swap, too. 
+> 
+> ✦ When calling swap, employ a using declaration for std::swap, then call swap without namespace qualification. 
+> 
+> ✦ It’s fine to totally specialize std templates for user-defined types, but never try to add something completely new to std.
+
+`swap` 自从在 STL 中引入，就是一个异常安全的函数。其一种经典的实现是：
+
+```cpp
+namespace std { 
+	template<typename T> 
+	void swap(T& a, T& b){ 
+		T temp(a); 
+		a = b; 
+		b = temp; 
+	} 
+}
+```
+
+只要类实现了构造函数和拷贝构造函数，上面这个模板函数就用于该类的交换。然而，默认的 `swap` 函数调用了一次拷贝构造函数和两次拷贝赋值函数，我们可能想根据自己的类定制一个更 fancy 的交换函数。
+
+对于存在类指针数据成员的类来说，拷贝函数进行的深拷贝是不必要的，我们可以在自定义交换函数中执行浅交换，即只要交换指针。注意，这一过程可以通过模板特化进行，而不是完全自定义一个 `swap` 函数。
+
+但是，模板特化也不能访问私有指针，一种做法是将特化的版本声明为友元函数。然而，更传统的做法是在类中声明一个公有接口 `swap`，并在模板特化中调用该接口。STL 的容器就是这么实现的。
+
+但是，上述方案并不适用于模板类。具体来说，模板类中存在模板类型 `T`，在对 `swap` 进行特化时只能进行部分特化，但 C++ 中模板函数不支持部分特化：
+
+```cpp
+namespace std{
+	template<typename T>
+	void swap<Widget<T>>(Widget<T>& a, Widget<T>& b){  // 对swap部分特化是不允许的
+		a.swap(b);
+	}
+}
+```
+
+一种方案是对 `swap` 进行重载（删除 `<Widget<T>>` 即可），但很遗憾，C++ 标准规定 std 命名空间只能由 C++ 标准委员会进行修改，而重载属于修改，是不被允许的。
+
+似乎所有路都被堵死了？其实没有！别忘记，我们不一定要重载或者特化 `std::swap`，我们可以直接在 `Widget` 的命名空间中声明 `swap` 并使用。得益于 ADL 机制，编译器会自动调用 `Widget` 所在命名空间的 `swap`。
+
+上述方案是万能的嘛？很遗憾，又不是。如下的一段代码，当执行交换时，调用的是哪个函数呢？`std::swap` 还是使用 `T` 特化的版本？又或者某个命名空间中针对类型 `T` 的 `swap`。
+
+```cpp
+template<typename T> 
+void doSomething(T& obj1, T& obj2) {
+	... 
+	swap(obj1, obj2); 
+	... 
+}
+```
+
+你可能想的是：如果有针对类型 `T` 的 swap，则优先调用，如果没有则回落到 `std::swap`，在 `doSomething` 中添加一行就能实现你的需求：
+
+```cpp {hl_lines=["3"]}
+template<typename T> 
+void doSomething(T& obj1, T& obj2) {
+	using std::swap;
+	... 
+	swap(obj1, obj2); 
+	... 
+}
+```
+
+当调用 swap 时，编译器首先会在全局空间或者 `T` 所在的命名空间寻找参数为 `T`swap 函数，如果找不到，则会在 `std` 空间中寻找特化的 swap，如果还是没有，则使用通用的 swap 实现。
+
+本节内容有点多，小结一下：
+
+- 如果通用的 swap 性能可以接受，则没必要自己实现。
+- 如果要自己实现，步骤为：
+	- 提供一个 swap 成员接口
+	- 在类所在的明明空间提供一个 swap 非成员函数，调用 swap 成员函数接口
+	- 如果你写的是类不是模板类，则为其特化一个 `std::swap`
+- 当调用 swap 时，确保使用 using 语句，使得 `std::swap` 是可见的。
+
+最后一点忠告：swap 成员函数不应该抛出异常。这是因为 swap 一个很重要的应用就是帮助类提供强异常安全的保证。这一约束仅用于成员函数，非成员函数不受此限制。
+
+## Implementations
+
+### Item 26: Postpone variable definitions as long as possible.
+
+> ✦ Postpone variable definitions as long as possible. It increases pro- gram clarity and improves program efficiency.
+
+对象的构造和析构过程需要时间，因此，尽可能推延变量的定义，知道接下来必须要使用这个变量。例如下面代码中，提前定义了需要返回的 `ret` 再判断异常逻辑。当触发异常时，`s` 的构造和析构是不必要的：
+
+```cpp
+std::string foo(string s){
+	...
+	string ret;
+	if(s.size() == 0){
+		throw logic_error("s is empty");
+	}
+	...
+	return ret;
+}
+```
+
+此外，上述代码会将 `ret` 初始化空串，这也是不必要的，之后对其赋值还会调用拷贝构造函数。更合适的做法是直接把计算出的返回值赋给 `ret`。
+
+所谓“as long as possible”，不仅仅指的是延迟变量的定义，而是当明确了变量的值之后再定义这个变量。
+
+对于循环中要使用的对象，一般在循环外定义更好，这可以避免多次调用构造和析构函数。
+
+### Item 27: Minimize casting.
+
+> ✦ Avoid casts whenever practical, especially dynamic_casts in perfor- mance-sensitive code. If a design requires casting, try to develop a cast-free alternative. 
+> 
+> ✦ When casting is necessary, try to hide it inside a function. Clients can then call the function instead of putting casts in their own code. 
+> 
+> ✦ Prefer C++-style casts to old-style casts. They are easier to see, and they are more specific about what they do.
+
+C++ 支持如下格式的类型转换：
+
+- C 风格：`(T) expression`
+- 函数风格：`T(expression)`
+- C++ 形式：
+	- `const_cast<T>(expression)`：移除一个变量的 const 修饰，只有 `const_cast` 运算符支持该转换。
+	- `dynamic_cast<T>(expression)`：进行“safe downcasting”，即判断一个基类对象能否安全转换为派生对象，该运算符有较大的运行时开销。
+	- `reinterpret_cast<T>(expression)`：进行两个无关类型之间的转换，即按照比特位重新解析为另外一个对象。该转换除非是面向低层编码，否则不应该使用。
+	- `static_cast<T>(expression)`：进行强制隐式类型转换  
+建议使用新版的 C++ 形式进行类型转换，一方面这些类型转换语句在代码中更容易识别，另一方面新的四种类型转换功能更加细化，方便查找错误。
+
+不同编译器和不同平台的内存排布可能不同，因此不要根据内存排布进行低层的类型转换。
+
+`static_cast` 如果传入的派生类对象，会返回基类对象的拷贝；如果传入派生类指针或引用，会返回基类对象指针或引用。因此，如果要调用基类非 const 成员函数，需要先转换为基类引用或者基类指针，再调用，否则该函数对该对象的修改是不起作用的。
+
+`dynamic_cast` 开销并不小，能避免就避免。可以使用虚函数的动态绑定机制，在不进行类型转换的情况下通过基类指针访问派生类的函数。
+
+### Item 28: Avoid returning “handles” to object internals.
+
+> ✦ Avoid returning handles (references, pointers, or iterators) to object internals. Not returning handles increases encapsulation, helps const member functions act const, and minimizes the creation of dangling handles.
+
+一个成员变量的封装程度也与返回该对象的引用的成员函数的访问权限有关，如果公有函数返回了私有变量，那么这个变量的封装就被破坏为公有的。
+
+如果一个对象内部的数据成员以指针的形式指向外部空间，并且该指针也可以被外部访问，那么即便这个对象被 const 修饰，其成员的内容还是会被修改。
+
+指针、引用、迭代器等都会存在上述问题，他们可以统称为用于用于访问对象的句柄。
+
+上面的两个问题指出了要遵守的规则：成员函数不得返回访问权限比自身更严格的成员变量/函数的句柄，除非有意为之并将返回值声明为 `const`。
+
+此外，如果一个类的成员函数返回了类内部成员的引用，还可能诱发临时对象销毁后访问问题，即这个类的临时对象调用了这个成员函数，其返回值将在返回后被销毁。例如：
+
+```cpp
+class A{
+	Data data_;
+	const Data& get_data() const {
+		return data_;
+	}
+};
+
+const Data* const p_data = &(A().get_data());
+```
+
+### Item 29: Strive for exception-safe code.
+
+> ✦ Exception-safe functions leak no resources and allow no data struc- tures to become corrupted, even when exceptions are thrown. Such functions offer the basic, strong, or nothrow guarantees. 
+> 
+> ✦ The strong guarantee can often be implemented via copy-and-swap, but the strong guarantee is not practical for all functions. 
+> 
+> ✦ A function can usually offer a guarantee no stronger than the weak- est guarantee of the functions it calls.
+
+当一个异常被跑出，异常安全的函数应该做到：
+
+- 没有资源泄露。资源泄露不仅仅是内存泄露，还包括锁等资源。这一点可以通过 [ > Item 13 Use objects to manage resources.](.md#item-13-use-objects-to-manage-resources.) 中的 RAII 做到。
+- 数据结构没有被破坏。即需要维护的数据结构仍然保持维护的状态。
+
+异常安全的函数满足以下三种特性之一：
+
+- 最基本的保证：如果抛出异常，程序内的所有状态都是合法且有效的，但无法预知这些状态的取值。
+- 强力保证：如果抛出异常，程序内所有的状态和函数调用前相同。这样的函数我们称之为原子函数。
+- 不抛出异常保证：函数保证在执行过程中不会抛出异常。内建类型的所有操作都是这样的函数。
+
+需要注意的是，类似 `void foo() noexcept;` 这样的函数声明并不意味着该函数保证不会抛出异常，这个声明意味着如果抛出了异常，那是致命的错误。相反，该函数甚至可能无法提供任何级别的异常安全保证。
+
+函数是否是异常安全的并不取决于它的函数声明，而是取决于其具体实现。确保不抛出异常是很困难的，尤其是当使用 C++ 的各种库时，通常只要实现稍弱的两种保证即可。
+
+要想提供异常安全的强力保证，通常会使用到 `swap and copy` 技术，即先对要修改的对象的拷贝进行修改，没有异常再交换二者。
+
+一旦涉及到函数彼此调用，想要实现强力保证就很快困难，即便被调用的函数能够提供强力保证。在下面的代码中，`foo` 调用了 `f1` 和 `f2`，如果 `f1` 正常调用结束，但 `f2` 发生了异常而回退，此时需要由 `foo` 追踪 `f1` 的修改内容并进行回退——这显然相当困难。
+
+```cpp
+void foo(){
+	...
+	f1();
+	f2();
+	...
+}
+```
+
+异常安全的强力保证需要消耗大量的资源和性能，并不适用于所有的场景。这种情况下，我们就要转向基本保证。
+
+但基本保证也不是一件易事，仍旧考虑上面那个调用两个函数的例子，如果 `f1` 是异常不安全的，那么当其排除异常时，内部可能存在资源泄露，这对于调用者 `foo` 来说是无法定位并释放的。因此，如果一个函数调用了异常不安全的函数，那其也无法提供异常安全的保证。
+
+同样的，对于一个系统来说，其要么是异常安全要么是异常危险的，不可能介于二者之间。一旦这个系统中有一个函数是异常危险的，这个系统就不可能是异常安全的。
+
+### Item 30: Understand the ins and outs of inlining.
+
+> ✦ Limit most inlining to small, frequently called functions. This facili- tates debugging and binary upgradability, minimizes potential code bloat, and maximizes the chances of greater program speed. 
+> 
+> ✦ Don’t declare function templates inline just because they appear in header files.
+
+内联函数除了可以减少函数调用开销，还可以给予编译器更大的优化空间。
+
+但是，启用内联，也会让目标文件变得更大（所有调用内链函数的地方都会被展开），增加换页次数、降低 cache 命中率。
+
+`inline` 是向编译器建议，而不是强制要求编译器将该函数处理为内联函数。有两种方式向编译器提出建议：隐式，即在类中给出成员/友元函数的定义；显式，即在函数定义处使用 `inline` 关键字。
+
+编译器要在编译器将内联函数调用原地展开，因此内链函数必须在头文件中给出。模板函数也是如此。但这并不意味着模板函数和内联函数之间存在什么充分必要关系。
+
+库的设计者应该评估是否将一个接口声明为 `inline`，如果这样做，一旦需要对内联函数的实现进行修改，所有调用该函数的代码也需要被重新编译。修改一个普通函数，则仅仅需要重新链接。
+
+### Item 31: Minimize compilation dependencies between files.
+
+> ✦ The general idea behind minimizing compilation dependencies is to depend on declarations instead of definitions. Two approaches based on this idea are Handle classes and Interface classes. 
+> 
+> ✦ Library header files should exist in full and declaration-only forms. This applies regardless of whether templates are involved.
+
+当我们修改一个类的具体实现后，所有直接和间接依赖这个类的文件都会被重新编译。这是因为 C++ 中的接口和实现没有很好地分离。
+
+```cpp
+#include "data.h"
+class Person{
+public:
+	const Date& get_birthdate() const; // interface
+private:
+	Date birthdate_; // implementation detail
+};
+```
+
+例如，`Person` 类中有接口 `get_birthdate`，其私有成员变量 `Date birthdate_` 就是一个实现，在编译 `Persion` 时，必须知道 `Date` 的具体实现，才能顺利编译。这是因为必须在 `Person` 中给 `Date` 成员预留出足够的空间，而不知道其具体实现，则无法获知其大小。
+
+**解决方案一：句柄类**
+
+在 Java 中，则不存在上述困扰。当在 Java 中定义一个类时，类成员以指针的形式保存在类中，而不为其预留完整空间。
+
+可以使用 C++ 模拟这一过程，这被称为“pimpl idiom”（point to implementation），具体为：将原本 `Person` 在头文件中的定义分为接口 `Person` 和实现 `PersonImpl` 两个类，前者只声明对外的接口和一个指向具体实现类的指针，后者定义具体的数据成员和接口实现。即：
+
+```cpp
+// person.h
+#include <memory>
+
+class Date;
+
+class Person{
+public:
+	const Date& get_birthdate() const; // interface
+private:
+	std::shared_ptr<PersonImpl> pImpl_; 
+};
+```
+
+需要注意的是，这里使用了前向声明（forward declaration）技术
+
+pimpl idiom 技术的核心理念是：将对实现的依赖转换为对声明的依赖。根据该理念，可以导出两个技巧：
+
+- 如果能使用对象指针或者引用，就不要直接使用对象。声明一个对象需要该对象的定义，但是指针和引用只需要声明。
+- 尽可能依赖声明而非实现。即便是某个函数的参数类型或者返回值类型，是可以直接声明为该类而不需要一定声明为指针或者引用的。
+- 一个类分别要提供声明和定义两个头文件。调用者要包含声明的头文件而非前向声明某个类。
+
+**解决方案二：接口类**  
+除了 pimpl idiom，另一种处理方式是将 `Person` 声明为一种特殊的抽象基类——接口，其作用是为派生类指定必须实现公有函数接口。通常来说，接口没有数据成员，没有构造函数，一个虚拟析构函数和一系列纯虚函数。
+
+C++ 中的接口不如 Java 中的限制严格，允许接口具有数据成员。
+
+`Person` 接口可以声明为：
+
+```cpp
+class Date;
+class Person{
+public:
+	virtual ~Person();
+
+	virtual const Date& get_birthdate() const = 0;
+};
+```
+
+注意，这个类的使用者只能使用 `Person` 的引用或者指针。按照这种方式实现的 `Person`，除非其接口有所改变，否则即便 `Person` 的实现修改调用者也不用重新编译。
+
+接口的调用者需要一个用于创建对象的方法，常用的方式是提供一个静态工厂函数接口用于创建一个对象，并返回相应的智能指针。这个工厂函数可以工具参数返回这个接口的不同派生对象。
+
+注意，由于工厂函数是一个静态函数，并不依赖于具体的数据成员或者方法，因此其所在的类仍旧是一个抽象类/接口。
+
+当然，上述方案减少了头文件之间的依赖，代价是增大了对象的体积，略微减慢了运行速度。
+
+句柄类的解决方案每次访问对象，都要进行一次指针访问操作；接口类的解决方案中，每个函数都是虚函数，每次访问接口函数，都有一次虚函数调用的开销。
 
 # 参考文档

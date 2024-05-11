@@ -3,7 +3,7 @@ title: Effective Cpp 第三版学习笔记
 tags:
   - Cpp
 date: 2024-04-17T18:23:00+08:00
-lastmod: 2024-04-28T20:54:00+08:00
+lastmod: 2024-05-11T20:24:00+08:00
 publish: true
 dir: notes
 slug: notes on effective cpp 3rd ed
@@ -933,5 +933,289 @@ public:
 当然，上述方案减少了头文件之间的依赖，代价是增大了对象的体积，略微减慢了运行速度。
 
 句柄类的解决方案每次访问对象，都要进行一次指针访问操作；接口类的解决方案中，每个函数都是虚函数，每次访问接口函数，都有一次虚函数调用的开销。
+
+## Inheritance and Object-Oriented Design
+
+这一章将集中介绍 C++ 中面向对象相关的内容，包括继承、派生和虚函数。C++ 中的 OOP 遵循 OOP 的基本理念，但又与其他语言的 OOP 有所不同。只有正确理解 C++ 中的 OOP，才能把“所想”通过 C++ 变成“所得”。
+
+### Item 32: Make sure public inheritance models “is-a.”
+
+> ✦ Public inheritance means “is-a.” Everything that applies to base classes must also apply to derived classes, because every derived class object is a base class object.
+
+**公有继承意味着“is-a”关系**，也就是说，类型 `D` 的所有对象也是类型 `B` 的对象。前面说的是 OOP 最基本的理念，必须要记住。
+
+C++ 中，需要基类对象的地方也可以传入派生类对象，当且仅当是公有继承才允许。
+
+is-a 关系很容易被直觉和不精确误导：众所周知，企鹅是一种鸟，并且鸟会飞，根据上述想法，不难写出如下代码：
+
+```C++
+class Bird{
+	...
+public:
+	virtual void fly();
+};
+
+class Penguin: public Bird{
+	...
+}
+```
+
+但事实上，企鹅并不会飞。这一问题的根源在于并不是所有的鸟都会飞，语言的表述是不准确的。更合理的做法是，派生出一个 `FlyingBird` 类，并在该类中声明虚函数 `fly`。当然，一切取决于需求，如果不需要使用 `fly` 这个行为，就没必要派生出 `FlyingBird` 这个抽象类。
+
+is-a 关系与数学上的特殊 - 一般关系也不相同，例如数学上正方形是一种特殊的长方形，但在 C++ 的公有继承不能这么实现。公有继承 is-a 关系指的是，派生类满足基类的一切性质，而正方形的长宽必须一致，这一特性导致长方形的某些方法并不适用于正方形。
+
+### Item 33: Avoid hiding inherited names.
+
+> ✦ Names in derived classes hide names in base classes. Under public inheritance, this is never desirable. 
+> 
+> ✦ To make hidden names visible again, employ using declarations or forwarding functions.
+
+在类继承中，同样存在名称遮蔽，即派生类中的成员会遮蔽基类中的同名成员。对于成员变量来说，一切都符合直觉，但对于成员函数来说，就不是这么一回事了。
+
+首先，成员函数的遮蔽是以函数名为标志的，也就是说，派生类中的成员函数除了会遮蔽基类中签名相同的同名函数，还会遮蔽基类中同名的重载函数。例如：
+
+```cpp
+class Base{
+public:
+	void fun1();
+	void fun1(int x); // 重载
+};
+
+class Derived: public Base{
+public:
+	void fun1(); // 遮蔽了基类中所有名为fun1的成员函数
+}
+
+/**********************************/
+
+int x=1;
+Derived d;
+d.fun1(x); // 不合法
+```
+
+C++ 的这一默认行为既不符合直觉，也不符合公有继承是 is-a 的关系。为了使重载函数仍旧在派生类中可见，可以在派生类中添加一行 using 语句：
+
+```cpp
+class Base{
+public:
+	virtual void fun1();
+	virtual void fun1(int x); // 重载
+};
+
+class Derived: public Base{
+public:
+	using Base::fun1; // 基类中所有名为fun1的成员都在派生类中可见
+	virtual void fun1(); 
+};
+
+/**********************************/
+
+int x=1;
+Derived d;
+d.fun1(x); // 合法
+```
+
+“在派生类中只继承基类重载成员函数某几个版本”这一想法在**公有继承**中违反了 is-a 理念，但在**私有继承**中，这个需求是合理的。如果在上面代码中，私有继承的派生类只想继承 `fun1` 的无参版本，可以使用转发：
+
+```cpp
+class Base{
+public:
+	virtual void fun1();
+	virtual void fun1(int x); // 重载
+};
+
+class Derived: public Base{
+public:
+	virtual void fun1()
+	{Base::fun1();} // 转发
+};
+
+/**********************************/
+
+int x=1;
+Derived d;
+d.fun1(x); // 不合法
+d.fun1(); // 合法，调用的是Derived::fun1()
+```
+
+### Item 34: Differentiate between inheritance of interface and inheritance of implementation.
+
+> ✦ Inheritance of interface is different from inheritance of implementa- tion. Under public inheritance, derived classes always inherit base class interfaces. 
+> 
+> ✦ Pure virtual functions specify inheritance of interface only. 
+> 
+> ✦ Simple (impure) virtual functions specify inheritance of interface plus inheritance of a default implementation. 
+> 
+> ✦ Non-virtual functions specify inheritance of interface plus inherit- ance of a mandatory implementation.
+
+在 C++ 的继承过程中，需要区分继承一个接口和继承一个函数。前者指的是，只继承这个函数的声明，而不继承基类中的实现（通常也不存在该实现），后者指的是同时继承声明和实现，同时还要区分能否重写（override）该函数。
+
+如果只需要继承来自基类的接口，可以在基类中将该接口声明为纯虚函数（事实上接口也就应该是纯虚函数）。一个冷知识是，纯虚函数同样可以在基类中给出定义，只是在调用时要显式指定，例如 `Base::fun()`。
+
+如果需要继承一个实现，同时允许在派生类中重写该方法，可以在基类中将该方法声明为虚函数。在实践过程中，往往会由于一个基类的多个派生类的同一个方法具有相同的实现，因此将其作为基类的默认实现。但这也为未来埋下了隐患：之后派生出的某个类并不适用该实现，但是重写该方法了，在编译阶段不会发现这个错误。解决方案为：
+
+```cpp
+class Base{
+public:
+	virtual void fun() = 0;// 改为纯虚函数
+protected:
+	void default_fun() = 0;
+};
+
+class Derived: public Base{
+public:
+	virtual void fun() // 转发到默认函数
+	{default_fun();}
+};
+```
+
+解决方案就是将原函数声明为纯虚函数，并提供一个非同名默认实现函数，在需要使用该默认实现的派生类中，重写该方法，转发到基类默认实现。
+
+有些人不喜欢上面将声明和实现写在两个函数中的方案，转而在基类中为纯虚函数提供一个定义来实现该需求。这是可行的，但在默认实现的权限控制上不如上面这个方案细粒度高。
+
+如果需要继承一个实现，同时禁止在派生类中重写该方法，那么就应该将该方法声明为非虚函数，并使用 `final` 关键字。
+
+### Item 35: Consider alternatives to virtual functions.
+
+> ✦ Alternatives to virtual functions include the NVI idiom and various forms of the Strategy design pattern. The NVI idiom is itself an ex- ample of the Template Method design pattern. 
+> 
+> ✦ A disadvantage of moving functionality from a member function to a function outside the class is that the non-member function lacks ac- cess to the class’s non-public members. 
+> 
+> ✦ tr1::function objects act like generalized function pointers. Such ob- jects support all callable entities compatible with a given target sig- nature.
+
+虚函数在实现过程中被尝尝使用，但实际上其也有几种替代品：
+
+- 通过非虚接口实现模板方法模式  
+这里的非虚接口来自一种理念：虚拟函数应该是私有的。所谓模板方法模式是一种设计模式，指的是在父类中定义了一个算法的框架，允许子类在不改变算法结构的情况下重写算法中的某些步骤。具体来说，在基类中提供一个非虚接口，其实现是调用某几个特定的私有虚函数，在派生类中，通过修改这几个私有虚函数的实现以修改派生类中的行为。
+
+这一设计模式的好处是可以在公有接口中在调用私有接口前后添加一些自定义内容，例如初始化环境、打日志、检查返回值、申请释放锁等。这一模式是控制反转的提现：高层抽象类负责控制基本流程顺序，低层派生类负责控制每个流程的具体实现。
+
+- 通过函数指针实现策略模式  
+前面提到的模板方法的解决方案，仍旧用到了虚函数（尽管其是私有的），一种更灵活的解决方案是要求派生类在构造基类时传入一个函数指针，基类在实现相关方法时，将调用该函数。
+
+其灵活性体现在，即便是同一派生类的不同实例，也可以具有不同的函数实现。
+
+起问题在于，作为非成员函数，该函数无法访问类中的非公有变量。解决方案是降低这个类的封装程度，例如将该函数声明为友元函数，或者提供访问这些变量的公有方法。
+
+- 通过 `std::function` 实现策略模式  
+函数指针的实现方案灵活度不够高：参数必须完美匹配，并且只支持常规函数。对其稍加改造，使用 `std::function` 来替代函数指针，则支持各种可调用的对象（函数对象、lambda 函数、成员函数等），且支持自动类型转换。
+
+### Item 36: Never redefine an inherited non-virtual function.
+
+> ✦ Never redefine an inherited non-virtual function.
+
+非虚函数使用的是静态绑定，即基类指针分别指向基类和派生类对象，调用同一个非虚函数，如果这个函数在派生类中被重新定义了，那么二者调用的版本是不同的。这并不符合面向对象的设计原则：
+
+- 前面提到，非虚函数的含义是为该类指定了某种特定实现，这种实现不应该在派生类中修改。如果有修改的需求，应该将其指定为虚函数。
+- 前面提到，公有继承是 is-a 关系，如果在派生类中要重定义某个函数，说明派生对象 is not a 基类对象，与 is-a 关系矛盾。
+
+### Item 37: Never redefine a function’s inherited default parameter value.
+
+> ✦ Never redefine an inherited default parameter value, because default parameter values are statically bound, while virtual functions — the only functions you should be redefining — are dynamically bound.
+
+不要修改函数继承的默认参数，这个条款乍一看很奇怪，这实际上是 C++ 中为了更高效地实现虚函数而出现的一种特性，即：
+
+```cpp
+class Base{
+public:
+	virtual void show(string str="Base"){
+		cout << "call Base::show "<< str << endl;
+	}
+};
+
+class Derived: public Base{
+public:
+	virtual void show(string str="Derived"){
+		cout << "call Derived::show "<< str << endl;
+	}
+};
+/*********/
+
+Derived d = Derived();
+Base &pd = d;
+pd.show(); // output: call Derived::show base
+```
+
+具有默认参数的虚函数在进行动态绑定时，其默认参数是静态绑定的。这就造成了上面这几行代码中，的确调用了派生类中重写了的 `show` 函数，但是传入的默认函数是来自 `pd` 静态的类型 `Base` 中对应方法的参数。这一特性是为了减少虚函数表中需要维护的内容，但也导致了其不符合直觉的行为。
+
+这种情况下，在派生类中将待重写的虚函数的参数列表照抄基类中的列表也是不合适的（未来可能修改参数的默认值）。一种解决方案是使用前文提到过的非虚接口：
+
+```cpp
+class Base{
+public:
+	virtual void show(string str="Base"){
+		do_show(str);
+	}
+private:
+	virtual void do_show(string str){
+		cout << "call Base::do_show" << str << endl;
+	}
+};
+
+class Derived: public Base{
+private:
+	virtual void do_show(string str){
+		cout << "call Derived::do_show" << str << endl;
+	}
+};
+/*********/
+
+Derived d = Derived();
+Base &pd = d;
+pd.show(); // output: call Derived::do_show base
+```
+
+由于非虚函数不可在派生类中重写/遮蔽，因此 `show` 的默认参数只能为值 base。
+
+### Item 38: Model “has-a” or “is-implemented-in-terms- of” through composition.
+
+> ✦ Composition has meanings completely different from that of public inheritance. 
+> 
+> ✦ In the application domain, composition means has-a. In the implementation domain, it means is-implemented-in-terms-of.
+
+组合关系（composition）指的是一个物体由多个对象组合而来，或者一个对象包含了其他对象的关系。与公有继承意味着 is-a 类似，组合关系意味着 has-a 或者 is-implemented-in-terms-of（基于 xxx 而实现）。
+
+组合关系的这两层含义，对应着两种不同领域：has-a 常用于对现实世界建模，is-implemented-in-terms-of 常用语纯粹的实现领域，例如实现锁、二叉树等等。
+
+区别 has-a 和 is-a 比较简单，但区分 is-implemented-in-terms-of 和 is-a 就有说法了。例如，当我们需要使用链表来实现集合时，这是哪种关系呢？如果 D is-a B，那么对于 B 成立的说法，对 D 都应该成立，但是链表允许有重复值，集合则允许，因此不是 is-a 关系。
+
+### Item 39: Use private inheritance judiciously.
+
+> ✦ Private inheritance means is-implemented-in-terms of. It’s usually inferior to composition, but it makes sense when a derived class needs access to protected base class members or needs to redefine inherited virtual functions. 
+> 
+> ✦ Unlike composition, private inheritance can enable the empty base optimization. This can be important for library developers who strive to minimize object sizes
+
+私有继承有如下两个影响：
+
+- 派生类对象不允许被转换为基类对象；
+- 基类成员在派生类中的访问权限为私有。  
+
+上面两个特性决定了，私有继承的含义为 is-implemented-in-terms-of，它和组合的一种含义相同。只有在迫不得已时，才应该使用私有继承，通常应该使用组合。
+
+迫不得已？例如要使用基类保护成员，或者要重写虚函数的情况。
+
+### Item 40: Use multiple inheritance judiciously.
+
+> ✦ Multiple inheritance is more complex than single inheritance. It can lead to new ambiguity issues and to the need for virtual inheritance. 
+> 
+> ✦ Virtual inheritance imposes costs in size, speed, and complexity of initialization and assignment. It’s most practical when virtual base classes have no data. 
+> 
+> ✦ Multiple inheritance does have legitimate uses. One scenario in- volves combining public inheritance from an Interface class with private inheritance from a class that helps with implementation.
+
+如果使用多继承，很容易出现名称相同（歧义）的情况。C++ 在解析对重载函数的调用时，首先搜索最佳匹配的函数，然后再检查其权限。这就导致了，即使同名的两个函数一者是私有的，编译器仍旧不能正确对多继承中的同名函数正确解析。
+
+为了解决这种歧义，在函数调用时必须显式指出调用的是哪个基类下的函数名。
+
+在多继承中，同一个基类可能沿着不同的路径被继承了多次，这些数据在最终的派生类中可以有两套独立的副本，也可以共享一个副本（虚继承）。被虚继承的基类称为虚基类。
+
+一般来说，所有的公有继承都应该是虚继承的。但是，虚继承本身存在性能代价：一方面，编译器需要为虚基类维护更多的信息，另一方面，在初始化时派生类的作者必须了解到有哪些虚基类，并为其手动初始化。
+
+因此，虚基类能不用就不用，即便要用，虚基类中的数据成员能少就少。
+
+多继承的一个合理的使用场景是：公有继承一个接口，同时私有继承一个类帮助实现这个接口。之所以要私有继承一个类，是因为要修改其的虚函数，否则使用组合即可。
+
+## Templates and Generic Programming
+
+从最初的容器开始，模板进入程序员的世界。后来人们发现模板的能力远不止于此，一种新的编程范式——模板变成应运而生。随后 C++ 中的模板又被证明为是图灵完备的，一种在编译期运行的程序——模板元变成又诞生了。
 
 # 参考文档

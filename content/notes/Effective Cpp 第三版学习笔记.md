@@ -3,7 +3,7 @@ title: Effective Cpp 第三版学习笔记
 tags:
   - Cpp
 date: 2024-04-17T18:23:00+08:00
-lastmod: 2024-05-11T20:24:00+08:00
+lastmod: 2024-05-14T13:47:00+08:00
 publish: true
 dir: notes
 slug: notes on effective cpp 3rd ed
@@ -1217,5 +1217,71 @@ pd.show(); // output: call Derived::do_show base
 ## Templates and Generic Programming
 
 从最初的容器开始，模板进入程序员的世界。后来人们发现模板的能力远不止于此，一种新的编程范式——模板变成应运而生。随后 C++ 中的模板又被证明为是图灵完备的，一种在编译期运行的程序——模板元变成又诞生了。
+
+### Item 41: Understand implicit interfaces and compile-time polymorphism.
+
+> ✦ Both classes and templates support interfaces and polymorphism. 
+> 
+> ✦ For classes, interfaces are explicit and centered on function signa- tures. Polymorphism occurs at runtime through virtual functions. 
+> 
+> ✦ For template parameters, interfaces are implicit and based on valid expressions. Polymorphism occurs during compilation through tem- plate instantiation and function overloading resolution.
+
+在面向对象编程中，显式接口和运行时多态是重要的组成部分。在泛型编程中，二者仍然生效，但更重要的是隐式接口和编译时多态。
+
+- 在泛型编程中，所谓隐式接口就是对类型 `T` 执行的所有操作、调用的所有方法
+- 所谓编译时多态指的是对 `T` 的实例化类型参数的不同会导致调用不同的方法，这就实现了多态
+
+通过各种表达式，可以为类型 `T` 声明其必须支持的接口有哪些。更严谨的说法是，`T` 必须要支持一些接口，使得这些表达式合法。例如：
+
+```cpp
+template <typename T>
+void do(T &w){
+	if(w.size() > 10 && w!=xxx){
+	...
+	}
+}
+```
+
+这几行代码并非意味着 `T` 必须支持返回一个可以与 10 比较类型的值的 `size` 方法，实际上，它只需要返回一个支持/重载了运算符 `operator >` 且接受参数 10 的类型即可。同样的，`T` 也不一定要重载 `!=` 运算符，只要 `w` 可以转换为某个类型 `X` 并且 `xxx` 可以转换为某个类型 `Y`，且 `X!=Y` 这个运算符有定义即可。
+
+### Item 42: Understand the two meanings of typename.
+
+> ✦ When declaring template parameters, class and typename are inter- changeable. 
+> 
+> ✦ Use typename to identify nested dependent type names, except in base class lists or as a base class identifier in a member initializa- tion list.
+
+在声明模板参数中，`typename` 和 `class` 是等价的。有些程序员会区分使用二者，例如只接受类的参数使用 `class`，接受一切类型的参数使用 `class`。
+
+模板中，由于不知道参数的具体类型，很容易引发歧义：
+
+```cpp {hl_lines=["3"]}
+template<typename C>
+void foo(const C& container){
+	C::const_iterator *x;
+}
+```
+
+上述代码的第四行中，本意是声明一个指向类型为`C::const_iterator`的指针`x`，但如果类`C`中恰好存在一个名为`const_iterator`的静态成员变量，并且恰好存在一个名为`x`的全局变量，这样代码的含义就变为了两个表达式相乘。编译器必须考虑各种可能性，默认情况下，其不会将类中的名称，例如`C::const_iterator`视为一个类型名称。需要在前面使用`typename`关键字修饰，这样编译器将把其视为类型明对待：
+```cpp
+template<typename C>
+void foo(const C& container){
+	typename C::const_iterator *x;
+}
+```
+注意：此处`typename`不可使用`class`替换。
+
+“在模板参数类的内嵌类型名前需要使用`typename`修饰”这一规则的一个例外是：在类继承的基类列表名和类初始化列表中，不得使用`typename`修饰：
+```cpp
+template<typename>
+// Derived继承了Base<T>中的一个内嵌类Nested
+class Derived: public Base<T>::Nested{ // 基类列表，不可使用typename修饰
+public:
+	explicit Derived(int x)
+	:Base<T>::Nested(x) // 初始化列表，不可使用typename修饰
+	{ ... }
+}
+```
+
+### Item 43: Know how to access names in templatized base classes.
 
 # 参考文档

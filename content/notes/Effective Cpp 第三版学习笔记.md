@@ -3,7 +3,7 @@ title: Effective Cpp 第三版学习笔记
 tags:
   - Cpp
 date: 2024-04-17T18:23:00+08:00
-lastmod: 2024-05-14T13:47:00+08:00
+lastmod: 2024-05-23T16:46:00+08:00
 publish: true
 dir: notes
 slug: notes on effective cpp 3rd ed
@@ -1261,16 +1261,19 @@ void foo(const C& container){
 }
 ```
 
-上述代码的第四行中，本意是声明一个指向类型为`C::const_iterator`的指针`x`，但如果类`C`中恰好存在一个名为`const_iterator`的静态成员变量，并且恰好存在一个名为`x`的全局变量，这样代码的含义就变为了两个表达式相乘。编译器必须考虑各种可能性，默认情况下，其不会将类中的名称，例如`C::const_iterator`视为一个类型名称。需要在前面使用`typename`关键字修饰，这样编译器将把其视为类型明对待：
+上述代码的第四行中，本意是声明一个指向类型为 `C::const_iterator` 的指针 `x`，但如果类 `C` 中恰好存在一个名为 `const_iterator` 的静态成员变量，并且恰好存在一个名为 `x` 的全局变量，这样代码的含义就变为了两个表达式相乘。编译器必须考虑各种可能性，默认情况下，其不会将类中的名称，例如 `C::const_iterator` 视为一个类型名称。需要在前面使用 `typename` 关键字修饰，这样编译器将把其视为类型明对待：
+
 ```cpp
 template<typename C>
 void foo(const C& container){
 	typename C::const_iterator *x;
 }
 ```
-注意：此处`typename`不可使用`class`替换。
 
-“在模板参数类的内嵌类型名前需要使用`typename`修饰”这一规则的一个例外是：在类继承的基类列表名和类初始化列表中，不得使用`typename`修饰：
+注意：此处 `typename` 不可使用 `class` 替换。
+
+“在模板参数类的内嵌类型名前需要使用 `typename` 修饰”这一规则的一个例外是：在类继承的基类列表名和类初始化列表中，不得使用 `typename` 修饰：
+
 ```cpp
 template<typename>
 // Derived继承了Base<T>中的一个内嵌类Nested
@@ -1283,5 +1286,501 @@ public:
 ```
 
 ### Item 43: Know how to access names in templatized base classes.
+
+> In derived class templates, refer to names in base class templates via a “this->” prefix, via using declarations, or via an explicit base class qualification.
+
+当需要继承模板基类并访问其中的方法时，编译器会拒绝访问：
+
+```cpp {hl_lines=["28"]}
+class BaseA{
+public:
+	void do_foo1();
+	void do_foo2();
+};
+
+// 模板基类，有foo1和foo2两个接口
+template <typename BaseName>
+class Base{
+public:
+	void foo1(){
+		BaseName base;
+		base.do_foo1();
+	}
+
+	void foo2(){
+		BaseName base;
+		base.do_foo2();
+	}
+};
+
+
+// 派生类，调用foo2方法
+template <typename BaseName>
+class Derived: public Base<BaseName>{
+public:
+	void call_foo2(){
+		do_foo2(); // invalid
+	}
+};
+```
+
+之所以第 28 行不能正确访问基类中的 `do_foo2` 方法，是因为模板特化的存在。在模板基类中的一个特化版本可能没有提供 `do_foo2` 方法，因此编译器拒绝编译该代码。
+
+有如下三种解决方案：
+
+- 在函数调用前使用 `this->`：
+
+```cpp {hl_lines=["5"]}
+template <typename BaseName>
+class Derived: public Base<BaseName>{
+public:
+	void call_foo2(){
+		this->do_foo2(); // valid
+	}
+};
+```
+
+- 使用 `using` 声明该方法：
+
+```cpp {hl_lines=["4"]}
+template <typename BaseName>
+class Derived: public Base<BaseName>{
+public:
+	using MsgSender<BaseName>::do_foo2;
+	void call_foo2(){
+		do_foo2();
+	}
+};
+```
+
+- 显式指定调用基类中的方法：
+
+```cpp {hl_lines=["5"]}
+template <typename BaseName>
+class Derived: public Base<BaseName>{
+public:
+	void call_foo2(){
+		MsgSender<BaseName>::do_foo2();
+	}
+};
+```
+
+应该避免使用第三种解决方案，因为作用域限定符将会使得虚函数的动态绑定机制失效。
+
+从名称可见性的角度看，这三个解决方案都做了一件事：向编译器保证 `do_foo2` 这个方法在任何模板特化中总是存在的。如果实际上不存在，那么在编译器该错误将被发现。
+
+### Item 44: Factor parameter-independent code out of templates.
+
+> ✦ Templates generate multiple classes and multiple functions, so any template code not dependent on a template parameter causes bloat. 
+> 
+> ✦ Bloat due to non-type template parameters can often be eliminated by replacing template parameters with function parameters or class data members. 
+> 
+> ✦ Bloat due to type parameters can be reduced by sharing implemen- tations for instantiation types with identical binary representations.
+
+模板可以精简源码的大小，但也有可能在实例化的过程中增大生成的可执行文件的大小，一个原因就是模板被实例化次数过多了。例如，当我们想要实现一个支持转置的方阵：
+
+```cpp
+template<typename T, size_t n>
+class SquareMatrix{
+public:
+	...
+	void invert();
+};
+```
+
+这个模板类有两个参数，一个类型参数 `T` 指示数据类型，一个非类型参数 `n` 指示矩阵大小。这是个常见的操作，但其会导致对于每个不同矩阵大小 `n`，即便数据类型相同，依旧会生成多份 `invert` 的实现代码。这显然是没必要的，需要再次进行抽象。
+
+一种做法是抽象出一个模板基类，只接收一个类型参数 `T`，并提供一个 `void invert(size_T n)` 方法，让派生类将非类型参数转发到该方法。这样，相同类型的数据将共享相同的模板实例。
+
+但是，抽象后的方案并不一定比原始方案更好。原始方案在编译期就确定了矩阵大小，编译器有更多的优化空间。另一方面，优化后的方案可执行文件更小，能够减少工作集的大小，提升程序的局部性，提升 cache 命中率。
+
+### Item 45: Use member function templates to accept “all compatible types.”
+
+> ✦ Use member function templates to generate functions that accept all compatible types. 
+> 
+> ✦ If you declare member templates for generalized copy construction or generalized assignment, you’ll still need to declare the normal copy constructor and copy assignment operator, too.
+
+假设我们想实现一个智能指针类 `SmartPointer`，要求支持从任何兼容的类型（任意类型的裸指针）构造：
+
+```cpp
+template<typename T>
+class SmartPointer{
+public:
+	SmartPointer(T *real_ptr);
+...
+};
+```
+
+接下来，要求不同类型的智能指针之间可以相互转换，可以使用通用复制构造函数 generalized copy constructors：
+
+```cpp
+template<typename T>
+class SmartPointer{
+public:
+	template<typename U>
+	SmartPointer(const SmartPointer<U>& other);
+...
+};
+```
+
+上述代码在模板类中使用了模板构造函数，以允许来自其它实例的构造参数。
+
+接下来，要求这个智能指针能够像裸指针一样，支持隐式的类型转换，例如，派生类指针转换为基类指针，我们使用 cpp 内置的之间转换来实现：
+
+```cpp
+template<typename T>
+class SmartPointer{
+public:
+	template<typename U>
+	SmartPointer(const SmartPointer<U>& other)
+	:held_ptr(other.get();) {};
+	T* get() const {return held_ptr};
+...
+private:
+	T* held_ptr;
+};
+```
+
+需要注意的是，模板构造函数并不会组织编译器生成默认构造函数。因此，如果需要拷贝构造一个对象，编译器将生成拷贝构造函数，即下述代码将没有任何输出：
+
+```cpp
+#include "iostream"  
+template<typename T>  
+class SmartPointer{  
+public:  
+    template<typename U>  
+    SmartPointer(const SmartPointer<U>& other)  
+            :held_ptr(other.get()) {  
+                std::cout << "Enter template copy constructor\n";  
+            };  
+    SmartPointer(T* p)  
+            :held_ptr(p) {};  
+    T* get() const {return held_ptr;};  
+private:  
+    T* held_ptr;  
+};  
+  
+int main(){  
+    SmartPointer<int> pint = {new int};  
+    SmartPointer<int> pint2 = {pint}; // 调用默认拷贝构造函数，而非模板构造函数
+}
+```
+
+### Item 46: Define non-member functions inside templates when type conversions are desired.
+
+> ✦ When writing a class template that offers functions related to the template that support implicit type conversions on all parameters, define those functions as friends inside the class template.
+
+在 [|Item 24](.md#item-24-declare-non-member-functions-when-type-conversions-should-apply-to-all-parameters.) 中，我们使用非成员函数来实现支持交换律的加法（自动类型转换），当我们将该技巧一应用到模板上时，发生了一些微妙的变化：
+
+```cpp
+template<typename T>
+class Rational{
+public:
+	Rational(const T& numerator=0, const T& denominator=0);
+	const T numerator() const;
+	const T denominator() const;
+	...
+};
+
+template<typename T>
+const Rational<T> operator*(const Rational<T>& lhs, const Rational<T> rhs){...}
+
+/*******************/
+
+Rational<int> half(1, 2);
+Rational<int> res = half*2; // error! won't compile!
+```
+
+怎会如此？！！原因在于，编译器要先对 `operator*` 进行实例化，但是，它不知道将该将 `T` 推导为哪个类型。`operator*` 接收了两个不同的参数类型，但在模板参数推导的过程中**隐式类型转换**不被考虑。
+
+解决方案是，将 `operator*` 声明为友元函数，让其中模板类型参数随着类的实例化而一起实例化。需要注意的是，要在类中给出这个函数友元函数的定义，这个友元函数不是模板函数，在外部给出定义的函数是一个模板函数，**二者不是一个函数**：
+
+```cpp
+template<typename T>
+class Rational{
+public:
+	Rational(const T& numerator=0, const T& denominator=0);
+	const T numerator() const;
+	const T denominator() const;
+
+	friend const Rational operator*(const Rational& lhs, const Rational rhs) // 在模板类中可以简写，忽略尖括号中的内容
+	...
+};
+
+template<typename T>
+const Rational<T> operator*(const Rational<T>& lhs, const Rational<T> rhs){...} // 这是一个模板函数定义，类中声明的友元函数并非一个模板函数
+```
+
+### Item 47: Use traits classes for information about types.
+
+> ✦ Traits classes make information about types available during com- pilation. They’re implemented using templates and template special- izations. 
+> 
+> ✦ In conjunction with overloading, traits classes make it possible to perform compile-time if...else tests on types.
+
+我们来尝试实现 `advance` 模板函数，其作用是将一个指针或者迭代器移动指定距离。cpp 的所有迭代器中，有一部分支持随机访问，而另一部分仅支持连续访问。出于性能的考量，在实现 `advance` 时，我们需要分开实现这两种迭代器，即我们需要获知该迭代器的类型信息。由于我们还要支持对指针的操作，因此这一信息不应保存在迭代器的内部。这可如何是好？
+
+好在，我们还有类型萃取 `traits`。`traits` 并非 cpp 中的关键字或者预定义的某个接口，它是一种技术的统称。鉴于类型信息不应保存在类型内部，标准做法是将其保存在一个模板，以及该模板的特化版本中。对于迭代器来说，标准库中的模板命名为 `iterator_traits`：
+
+```cpp
+template<typename iterT>
+struct iterator_traits;
+```
+
+传统上，使用结构体来实现 `traits`。通过在结构体内声明一个名为 `iterator_category` 的 typedef，对于不同类型的 `iterT` 定义不同的值，来区分不同的迭代器类型。
+
+具体来说，`iterator_traits` 由两部分组成。对于用户定义的迭代器，要求其必须内嵌一个名为 `iterator_category` 的 typedef，取值为标准库中的迭代器的分类 tag：
+
+```cpp
+template<...>
+class deque{
+public:
+	class iterator{
+	public:
+		typedef random_access_iterator_tag iterator_category;
+		...
+	};
+	...
+};
+
+
+/*******迭代器tag取值**************/
+struct input_iterator_tag {};
+struct output_iterator_tag {};
+struct forward_iterator_tag : public input_iterator_tag {};
+struct bidirectional_iterator_tag : public forward_iterator_tag {};
+struct random_access_iterator_tag : public bidirectional_iterator_tag {};
+```
+
+例如，上文定义了一个双端队列中支持随机访问的迭代器。对于 `iterator_traits` 来说，其要做的就是将 `iterT` 中的 tag 再次声明为 `iterator_category`：
+
+```cpp
+template<typename iterT>
+struct iterator_traits{
+	typedef typename iterT::iterator_category iterator_category
+};
+```
+
+至此，我们已经完成了对用户自定义类型支持。接下来我们支持对内建指针的支持。指针是一种支持随机访问的迭代器，使用部分模板特化对指针进行特化：
+
+```cpp
+template<typename T>
+struct iterator_traits<T*>{
+	typedef typename random_access_iterator_tag iterator_category;
+};
+```
+
+当我们完成萃取类后，接下来就可以分类讨论来实现 `advance` 方法了：
+
+```cpp
+template <typename iterT, typename distT>
+void advance(iterT& iter, distT d){
+	if(typeid(typename iterator_traits<IterT>::iterator_category) == typeid(std::random_access_iterator_tag))
+	...
+}
+```
+
+遗憾的是，上面的代码存在编译错误，该问题将在下一个条款讨论。不但如此，上述代码的 `if` 语句应该在运行期执行，但事实上，条件语句在编译器就已经确定了结果，这降低了代码的执行效率。
+
+编译器的条件语句？emmmm...似乎比较麻烦。别忘了我们还有函数重载！函数重载的就是根据不同的参数类型执行不同的代码！据此，我们可以重载不同迭代器类型对应的 `advance` 实现：
+
+```cpp
+template <typename iterT, typename distT>
+void do_advance(iterT& iter, distT d, std::random_access_iterator_tag){
+...
+}
+
+template <typename iterT, typename distT>
+void do_advance(iterT& iter, distT d, std::input_iterator_tag){
+...
+}
+
+...
+```
+
+有了以上代码，`advance` 函数仅需要调用他们即可。需要注意的是，在模板函数的重载中，可以有未命名形参。但是在调用函数的过程中，必须传入实参对象。好在，我们前面用来标识类型的标签是空的结构体，我们可以直接使用该结构体构造一个空对象作为形参传入：
+
+```cpp
+template <typename iterT, typename distT>
+void advance(iterT& iter, distT d){
+	do_advance(iter, d, typename std::iterator_traits<iter>::iterator_category);
+}
+```
+
+以上我们总结出使用函数萃取类的过程：
+
+- 创建一系列根据类型重载的“worker”函数。
+- 创建一个“master”函数调用调用“worker”。
+
+### Item 48: Be aware of template metaprogramming.
+
+> ✦ Template metaprogramming can shift work from runtime to com- pile-time, thus enabling earlier error detection and higher runtime performance. 
+> 
+> ✦ TMP can be used to generate custom code based on combinations of policy choices, and it can also be used to avoid generating code in- appropriate for particular types.
+
+模板元编程（TMP）就是书写在编译期运行的 cpp 代码的过程，其在编译期运行，输出结果再由编译器进行编译。
+
+TMP 在上世纪九十年代被发现（⚠️不是发明），其有两个作用：
+
+- 让某些不可能或者难以实现的事情变得可以实现；
+- 将一些运行期的工作转移到编译期进行。  
+第二个作用，可以把一些运行期的错误提前到编译期发现，并减小编译生成的可执行代码的文件大小，提高行效率。
+
+前面我们在不使用函数重载实现 `advance` 的过程中，曾提到以下代码存在编译错误：
+
+```cpp
+template <typename iterT, typename distT>
+void advance(iterT& iter, distT d){
+	if(typeid(typename iterator_traits<IterT>::iterator_category) == typeid(std::random_access_iterator_tag))
+	...
+}
+```
+
+原因在于，如果我们传入一个不支持随机访问的迭代器，这个函数模板依旧会被完整展开，并且其中存在 `iter += d;` 这样的语句。尽管，该语句所在的 if 分支的条件永远为 `false`，这并不影响编译器对该语句进行编译检查。而不支持随机访问的迭代器并没有实现 `operator +=`，因此将会在编译期报错。
+
+TMP 是图灵完备的，前一条款演示了在 TMP 中如何实现条件控制流。在 TMP 中，循环控制流则是通过递归来实现的，与常规 cpp 中递归调用函数不同，TMP 的递归是模板递归实例化。一个使用 TMP 编写的计算阶乘的代码为：
+
+```cpp
+template<unsigned n>
+struct Factorial{
+	enum {value = n*Factorial<n-1>::value};
+};
+
+template<>
+struct Factorial<0>{
+	enum {value = 1};
+};
+```
+
+接下来作者举了 TMP 实际应用的几个领域，此处不在记录。总而言之，TMP 有其擅长的领域，但鉴于其反直觉的特性，以及作者写该书时相关工具链还很孱弱，需要谨慎使用。
+
+## Customizing new and delete
+
+现如今，很多语言都支持了自动垃圾回收。C++ 手动的回收方式似乎显得有些过时了。但是，许多系统的开发者选择 cpp，因为其允许他们手动管理内存。做到这一点，必须了解 cpp 中内存分配和释放例程的行为，这正是本章的重点内容。
+
+在多线程环境下，内存管理的困难要大得多，因为堆和 new-handler 都是可修改的全局资源，容易受到竞争条件的影响。
+
+### Item 49: Understand the behavior of the new-handler.、
+
+> ✦ set_new_handler allows you to specify a function to be called when memory allocation requests cannot be satisfied. 
+> 
+> ✦ Nothrow new is of limited utility, because it applies only to memory allocation; associated constructor calls may still throw exceptions.
+
+如果 `operator new` 无法分配足够内存，其将抛出异常（老版本将返回 `NULL`），但在此之前，其将调用一个名为 `new-handler` 的错误处理函数。标准库中提供了一个 `set_new_handler` 函数用于设置 `new-handler`：
+
+```cpp
+namespace std{
+	typedef void (*new_handler)();
+	new_handler set_new_handler(new_handler p) noexcept;
+}
+```
+
+如上所示，`new_handler` 是一个输入参数和返回值均为空的函数指针类型，`set_new_handler` 接收这样一个指针，并将原处理函数指针返回。范例为：“
+
+```cpp
+void out_of_mem(){
+	std::cerr << "Out of Mem\n";
+	std::abort();
+}
+
+int main(){
+	std::set_new_handler(out_of_mem);
+	int *p = new int[100000000L]; // if fail, call out_of_mem and then abort
+}
+```
+
+当 `new` 不能分配足够的内存时，其将不停调用 new-handler 直至有足够内存，或者停止。因此，new-handler 函数必须满足以下特性之一：
+
+- 释放更多的内存空间。
+- 设置另一个 new-handler 函数。
+- 取消当前的 new-hander 函数。这将恢复 `new` 失败的默认行为，即抛出一个异常。
+- 抛出异常。
+- 不再返回，程序停止运行。
+
+如果我们想为不同的类定制 new-handler，似乎也挺简单的：在每次 new 之前手动替换对应的 new-handler 函数。接下来，我们一起来尝试将这一理念付诸实践。
+
+首先，既然要替换原有的 new-handler 函数，那必须有一个变量在类中记录对应的 new-handler。那自然也要提供一个设置 new-handler 的接口，用于保存原始和替换 new-handler。此外，还需要重载 `operator new`：
+
+```cpp
+class Widget{
+public:
+	static std::new_handler set_new_handler(std::new_hander p) noexcept;
+	static void* operator new (std::size_t size);
+
+private:
+	static std::new_handler current_handler;
+};
+```
+
+需要注意，静态成员变量需要在类的定义外部进行定义和初始化。重载的 `new` 应该做哪些事情呢？如下：
+
+- 调用 `set_new_handler`，将 new-handler 设置为类提供的函数。
+- 调用全局 `new` 实例化一个对象，如果失败，则应该恢复原始 new-handler 并抛出异常。为了确保其被正确恢复，应该使用资源管理类对 new-handler 进行管理。
+- 如果 `new` 正常实例化了一个对象，则 new 应该返回对象指针。恢复 new-handler 的工作交由资源管理对象的析构函数负责。
+
+首先来实现一个 RAII 资源管理类：
+
+```cpp
+class NewHandlerHolder{
+public:
+	explicit NewHandlerHolder(std::new_handler nh)
+	:handler(nh){};
+	~NewHandlerHolder(){
+		std::set_new_handler(handler);
+	}
+
+private:
+	std::new_handler handler;
+	NewHandlerHolder(const NewHandlerHolder&);
+	NewHandlerHolder& operator=(const NewHandlerHolder&); // 禁止拷贝构造和赋值
+};
+```
+
+那么 `new` 可以重载为：
+
+```cpp
+void* operator new (std::size_t size){
+	NewHandlerHolder h(std::set_new_handler(current_handler));
+	return ::operator new(size);
+};
+```
+
+看到这里，不禁感叹，真 TMD 优雅！屏住呼吸，还没结束呢！接下来，我们使用混合模式（Mixin-style），将其改造为模板类。详细来说，通过继承基类，派生类可以得到 `set_new_handler` 和 `operator new` 这俩成员，通过模板，则可以确保不同的类继承得到的静态成员是不同的。
+
+```cpp
+template <typename T>
+class NewHandlerSupport{
+public:
+	static std::new_handler set_new_handler(std::new_hander p) noexcept;
+	static void* operator new (std::size_t size);
+private:
+	static std::new_handler currentHandler;
+};
+
+template <typename T>
+std::new_handler NewHandlerSupport<T>::set_new_handler(std::new_hander p) noexcept{
+	std::new_handler oldHandler = currentHandler; 
+	currentHandler = p; 
+	return oldHandler;
+}
+
+template<typename T> 
+void* NewHandlerSupport<T>::operator new(std::size_t size){ 
+	NewHandlerHolder h(std::set_new_handler(currentHandler));
+	return ::operator new(size);
+}
+
+template<typename T> 
+std::new_handler NewHandlerSupport<T>::currentHandler = 0;
+```
+
+有了模板类，我们再实现 `Wiget` 就简单多了：
+
+```cpp
+class Widget: public NewHandlerSupport<Widget>{
+...
+};
+```
+
+值得注意的是，在模板类中，我们没有使用到参数类型 `T`，其存在的作用是为不同的类名，编译器都会创建一次代码副本，将他们的静态成员隔离开来。此外，我们的 `Widget` 继承了一个使用自己实例化的基类模板，这是合理的，这一技术的名字和它的行为一样古怪：奇异递归模板模式
 
 # 参考文档

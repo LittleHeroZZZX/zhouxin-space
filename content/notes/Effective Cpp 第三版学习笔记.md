@@ -3,7 +3,7 @@ title: Effective Cpp 第三版学习笔记
 tags:
   - Cpp
 date: 2024-04-17T18:23:00+08:00
-lastmod: 2024-05-23T16:46:00+08:00
+lastmod: 2024-05-28T12:53:00+08:00
 publish: true
 dir: notes
 slug: notes on effective cpp 3rd ed
@@ -1781,6 +1781,161 @@ class Widget: public NewHandlerSupport<Widget>{
 };
 ```
 
-值得注意的是，在模板类中，我们没有使用到参数类型 `T`，其存在的作用是为不同的类名，编译器都会创建一次代码副本，将他们的静态成员隔离开来。此外，我们的 `Widget` 继承了一个使用自己实例化的基类模板，这是合理的，这一技术的名字和它的行为一样古怪：奇异递归模板模式
+值得注意的是，在模板类中，我们没有使用到参数类型 `T`，其存在的作用是为不同的类名，编译器都会创建一次代码副本，将他们的静态成员隔离开来。此外，我们的 `Widget` 继承了一个使用自己实例化的基类模板，这是合理的，这一技术的名字和它的行为一样古怪：奇异递归模板模式。
 
-# 参考文档
+### Item 50: Understand when it makes sense to replace new and delete.
+
+> ✦ There are many valid reasons for writing custom versions of new and delete, including improving performance, debugging heap usage er- rors, and collecting heap usage information.
+
+为什么要替换编译器默认版本的 `new` 和 `delete` 运算符呢？一般来说，有以下三个理由：
+
+- 检查使用错误。没有或者多次释放 new 的内存，都会引发错误。如果在 `new` 和 `delete` 中维护一张内存申请表，则可以检查出上述问题。又或者，还可以用于防止数据溢出，通过在内存的末尾写入一个签名，在 `new` 中检查该是否完好，可以判断是否出现了数据溢出写入。
+- 提高效率。编译器自带的实现版本，需要兼容各种程序、各种内存大小的申请的情况，还要考虑内存碎片等等各种情况，通过自定义实现，可以避免这些开销。
+- 收集使用数据。在研发阶段通过收集数据，可以分析出该程序使用动态内存的特点，并针对性进行优化。
+
+接下来举个使用 `new` 检查内存是否存在溢出写入的例子：
+
+```cpp
+static const int signature = 0xDEADBEEF;
+typedef unsigned char Byte;
+
+void* operator new(std::size_t size){
+	using namespace std;
+	size_t real_size = size+2*sizeof(int);
+	void *p_mem = malloc(real_size);
+	if(!p_mem)
+		throw bad_alloc();
+	*(static_cast<int*>(pMem)) = signature;
+	*(reinterpret_cast<int* >(static_cast<Byte* >(pMem)+realSize-sizeof(int))) = signature;
+	return static_cast<Byte*>(pMem) + sizeof(int);
+}
+```
+
+上述代码通过在申请的内存块两段放置额外的签名数据，以检测是否存在数据溢出写入的情况。当然，上述代码实际上存在很多问题。一方面，它不符合 cpp 关于 new 的规范，如果内存申请失败，应该循环调用 new-handler；另一方面，它没有考虑内存对齐的情况。
+
+cpp 要求 `new` 返回的指针要满足内存对齐的要求，我们使用的 `malloc` 同样也是内存对齐的，但我们返回的偏移了一个 `int` 大小的指针，其不是对齐的。
+
+内存对齐此类的小但确实重要的问题有很多很多，自定义一个完美的 `new` 的困难可见一斑。
+
+### Item 51: Adhere to convention when writing new and delete.
+
+> ✦ operator new should contain an infinite loop trying to allocate mem- ory, should call the new-handler if it can’t satisfy a memory request, and should handle requests for zero bytes. Class-specific versions should handle requests for larger blocks than expected. 
+> 
+> ✦ operator delete should do nothing if passed a pointer that is null. Class-specific versions should handle blocks that are larger than ex- pected.
+
+这一条款将介绍在自定义 `new` 和 `delete` 时，需要遵守的几个规则。
+
+首先是与 `new` 相关的几个要求：
+
+- 返回正确的值。
+- 当内存不足时，循环调用 new-handle 函数。
+- 正确处理申请大小为 0 的情况。
+- 避免遮蔽正常的 `new`。此要求将在下一条款讨论。
+
+返回值听上去很简单，如果内存充足，则返回对应指针；否则，抛出异常。但也并非如此一蹴而就，如果内存不足，需要循环调用 new-handle 并再次申请内存，直至 new-handle 函数指针为空，抛出异常 `std::bad_alloc`。此外，cpp 规范还要求，即便申请了 0 字节大小的空间，也应该返回一个合法的指针。下面这段为代码，演示了一个 `new` 的行为：
+
+```cpp
+void *operator new(std::size_t size){
+	using namespace std;
+	if(size == 0){
+		size = 1;
+	}
+	while(true){
+	attemp to allocate size bytes;
+	if(success)
+		return pointer to mem;
+	}
+	new_handler global_handler = set_new_handler(0); // 获取new-handler
+	set_new_handler(global_handler);
+	if(global_handler){
+		(*global_handler)();
+	} else {
+		throw std::bad::alloc();
+	}
+	
+}
+```
+
+对于 0 字节，可以把它当作申请了一个字节来处理。由于没有获取 `new-handler` 的函数，因此只能通过手动将其设置为 `null` 然后再恢复的方法，获取 `new-handler` 函数指针。对于多线程的环境，可能需要上锁防止竞争。
+
+通常，为某个类重写的 `new` 都是针对这个类大小的内存进行优化的版本，而不是用于其他类或者该类的派生类。然而，如果在派生类中没有重写 `new`，`new` 派生类对象时将调用基类中的 `new` 函数。为了防止此类问题，可以在先判断 `size == sizeof(Base)`，若不相等，调用全局 `new` 函数。
+
+`delete` 函数就简单多了，唯一要注意的是：`delete` 要考虑指针为 NULL 的情况。
+
+```cpp
+void operator delete(void *rawMemory) noexcept{
+	if(rawMemory == 0)
+		return;
+	归还已分配的内存;
+}
+```
+
+成员函数的版本也简单，只要像前面的 `new` 一样，记得校验申请的内存大小是否与基类大小一致即可。
+
+### Item 52: Write placement delete if you write placement new.
+
+> ✦ When you write a placement version of operator new, be sure to write the corresponding placement version of operator delete. If you don’t, your program may experience subtle, intermittent memory leaks. 、
+> 
+> ✦ When you declare placement versions of new and delete, be sure not to unintentionally hide the normal versions of those functions.
+
+`Widget *pw = new Widget;` 这样一句代码会执行两个操作：先调用 `operator new` 申请对应大小的内存，再调用构造函数进行初始化。如果在构造期间出错了，由于构造没有完成，用户得不到 `pw` 指针，因此用户无法对初始化失败的内存进行释放。为了防止内存泄露，该操作由编译器负责。
+
+编译器负责释放内存时，其必须知道与申请内存 `new` 配套的 `delete` 函数是哪个。对于常见的只接受一个参数 `size_t size` 的 `new` 来说，其配套的 `delete` 也是如此。但是，有一类 `new` 可以接受不止一个参数，这类 `new` 我们称之为“placement new”，定位 new。
+
+placement new 狭义上只得是 `void* operator new(std::size_t, void *pMemory)`，其接受一个额外的指针，表示在其指示的位置构造对象。广义上来说，所有参数列表不止是 `size_t size` 的 new 都可以被称为 placement new。狭义的含义更常见，通过语境很容易判断 placement new 的含义。
+
+对于 placement new，如果其在构造的过程中出错了，运行时系统负责找到参数类型和数量一致的 placement delete 释放对应内存。如果找不到，则会导致内存泄露。
+
+如果 new 对象的过程一切整成，那么使用 `delete` 删除时，将会调用非 placement 版本。这就意味着，当自定义 placement new 时，既要提供 placement delete 版本防止构造失败，也要提供默认 delete 版本用于正常销毁。
+
+由于名称遮蔽的存在，如果在类中声明了一个成员 placement new，其将遮蔽默认 new。此外，还遮蔽了全局存在三个版本的 new：
+
+```cpp
+void* operator new(std::size_t);
+void* operator new(std::size_t, void*);
+void* operator new(std::size_t, const std::nothrow_t);
+```
+
+如果遮蔽之后想让他们仍然可用，记得让配套的 delete 也可用。
+
+## Miscellany
+
+这一章是杂项，胜利在望！
+
+### Item 53: Pay attention to compiler warnings.
+
+> ✦ Take compiler warnings seriously, and strive to compile warning- free at the maximum warning level supported by your compilers. 
+> 
+> ✦ Don’t become dependent on compiler warnings, because different compilers warn about different things. Porting to a new compiler may eliminate warning messages you’ve come to rely on.
+
+大多数情况要，只要编译器没给出 error，程序都能跑起来。但在警告中，程序可能存在致命的错误，例如：
+
+```cpp
+class Base{
+public:
+	virtual void f() const;
+};
+
+class Derived: public Base{
+public:
+	virtual void f();
+};
+```
+
+上述代码本意是在派生类中重新定义激烈函数 `f`，但遗漏了 `const` 修饰符，对编译器而言这意味着 `Derived::f` 遮蔽了 `Base::f`。
+
+对于此类行为，编译器会给出警告，根据警告，很容易检查出相应的错误。
+
+### Item 54: Familiarize yourself with the standard library, including TR1.
+
+历史文件，现实意义尚不明确。跳过本条款。
+
+### Item 55: Familiarize yourself with Boost.
+
+不想学了，草草结束，这个坑以后再填！
+
+## 终章
+
+从 2024-04-17 到 2024-05-28，这本书耗费的时间比想象中多的多得多。anyway，收货还是颇丰的。阅读过程中时不时地会发出感叹：这也太细/优雅/牛逼了，作者很喜欢埋一些伏笔，读到后面恍然大悟，知识都串起来了。
+
+作为第一本 cpp 深入的书籍，不错不错。缺点是对现代 cpp 的涉猎太少了，好在作者还有一本《Effective Mordern cpp》，安排上！

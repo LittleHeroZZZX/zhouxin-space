@@ -10,6 +10,7 @@ dir: notes
 slug: notes on cmu 10-414 deep learning system
 images:
   - https://pics.zhouxin.space/202406041918872.png?x-oss-process=image/quality,q_90/format,webp
+math: "true"
 ---
 
 # 资源存档

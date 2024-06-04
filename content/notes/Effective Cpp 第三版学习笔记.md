@@ -3,7 +3,7 @@ title: Effective Cpp 第三版学习笔记
 tags:
   - Cpp
 date: 2024-04-17T18:23:00+08:00
-lastmod: 2024-05-28T12:53:00+08:00
+lastmod: 2024-05-28T18:25:00+08:00
 publish: true
 dir: notes
 slug: notes on effective cpp 3rd ed
@@ -1939,3 +1939,5 @@ public:
 从 2024-04-17 到 2024-05-28，这本书耗费的时间比想象中多的多得多。anyway，收货还是颇丰的。阅读过程中时不时地会发出感叹：这也太细/优雅/牛逼了，作者很喜欢埋一些伏笔，读到后面恍然大悟，知识都串起来了。
 
 作为第一本 cpp 深入的书籍，不错不错。缺点是对现代 cpp 的涉猎太少了，好在作者还有一本《Effective Mordern cpp》，安排上！
+
+完结，撒花🎉

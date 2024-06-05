@@ -72,7 +72,7 @@ math: "true"
 
 如果一次输入多个数据，那么输入数据就可以组织成一个矩阵，相比起多个向量操作，矩阵的操作通常效率更高，我们在代码实现中一般也是用矩阵操作。数据集可以表示为：
 
-$$
+<div>$$
 X\in R^{m\times n}=\left[ \begin{array}{c}
 	x^{(1)T}\\
 	\vdots\\
@@ -82,7 +82,11 @@ X\in R^{m\times n}=\left[ \begin{array}{c}
 	\vdots\\
 	y^{\left( m \right)}\\
 \end{array} \right] 
-<div>$$\n数据集的矩阵是一个个样本转置后堆叠 stack 起来的。那么输出可以表示为：\n$$</div>
+$$
+
+数据集的矩阵是一个个样本转置后堆叠 stack 起来的。那么输出可以表示为：
+
+$$
 h_{\theta}\left( X \right) =\left[ \begin{array}{c}
 	h_{\theta}\left( x^{\left( 1 \right)} \right) ^T\\
 	\vdots\\
@@ -119,7 +123,8 @@ $$
 
 注意在计算交叉熵时，通过运算进行了化简，这使得我们可以省去计算 softmax 的过程，直接计算最终的结果。不但如此，交叉熵的计算中，如果 $h_i(x)$ 的值很小，那么取对数会出现很大的值，化简后的计算则避免了这种情况。
 
-所有的深度学习问题，都可以归结为一下这个最优化问题：$$  
+所有的深度学习问题，都可以归结为一下这个最优化问题：
+$$</div> 
 \mathop {\mathrm{minimize}} \limits_{\theta}\ \ \frac{1}{m}\sum_{i=1}^m{l(h_{\theta}(x^{(i)}),y^{(i)}))}
 
 $$

@@ -4,7 +4,7 @@ tags:
   - CUDA
   - 深度学习系统
 date: 2024-05-28T12:24:00+08:00
-lastmod: 2024-06-05T14:22:00+08:00
+lastmod: 2024-06-05T22:33:00+08:00
 publish: true
 dir: notes
 slug: notes on cmu 10-414 deep learning system
@@ -204,10 +204,89 @@ $$</div>
 
 因此，在使用线性网络提取特征后，需要再接上一个非线性函数$\sigma$，即$\phi = \sigma (W^T X)$。
 ## 神经网络
+上文提到的使用非线性函数后的模型，就可以视作一种最简单的神经网络。所谓神经网络，值得是机器学习中某一类特定的假说模型，其由多层组成，每一层都有大量可以微分的参数。
 
+神经网络最初的确起源于模拟人类神经元这一动机，但随着其发展，越来越多的神经网络模型出现，与人类大脑神经网络越来越不相关。
+
+以双层神经网络为例，其形式化表示为$h_\theta(x) = W_2^T \sigma(W_1^T x)$，所有可学习的参数使用$\theta$表示。以batch的矩阵形式表示为：
+<div>$$
+h_\theta(X) = \sigma(XW_1)W_2
+$$</div>
+接下来给出L层多层感知机（a.k.a. MLP、前馈神经网络、全连接层）的形式化表达：
+<div>$$
+\left\{\begin{array}{l}  
+Z_{i+1} = \sigma_i(Z_iW_i), i=1,...,L  \\  
+Z_1 = X\\  
+h_\theta(X) =Z_{L+1}\\  
+[Z_i\in R^{m\times n_i}, W_i \in R^{n_i\times n_{i+1}}]\\  
+\sigma_i:R\rightarrow R
+
+\end{array} \right.
+$$</div>
+每一层的输入为$Z_i$，输出为$Z_{i+1}$。
+
+为什么要是用深度网络而不是宽度网络？没有很完美的解释，但最好并且最现实的解释是：经验证明，当参数量固定时，深度网络性能优于宽度网络。
 ## 反向传播（梯度计算）
+与Lecture 2一致，使用交叉熵作为损失函数，使用SGD作为优化算法，唯一的区别是，这次要对MLP网络求解梯度。
 
+对于两层神经网络$h_\theta(X) = \sigma(XW_1)W_2$，待求的梯度表达式为：
+<div>$$
+\nabla_{\{W_1, W_2\}}l_{ce}(\sigma(XW_1)W_2,y)
+$$</div>
+对于$W_2$的梯度，其与Lecture 2的计算类似：
+<div>$$
+\begin{align}  
+\frac{\partial l_{ce}(\sigma(XW_1)W_2,y)}{\partial W_2}&=\frac{\partial l_{ce}(\sigma(XW_1)W_2,y)}{\partial \sigma(XW_1)W_2} \cdot \frac{\partial\sigma(XW_1)W_2}{\partial W_2}\\  
+&=(S-I_y)_{m\times k}\cdot \sigma(XW_1)_{m\times d}\\  
+&=\sigma(XW_1)^T\cdot (S-I_y)\\  
+&[S=\text{softmax}(\sigma(XW_1))]  
+\end{align}
+$$</div>
 
+对于$W_1$的梯度，其需要多次应用链式法则，但并不难计算：
+<div>$$
+\begin{align}  
+\frac{\partial l_{ce}(\sigma(XW_1)W_2,y)}{\partial W_1}&=\frac{\partial l_{ce}(\sigma(XW_1)W_2,y)}{\partial \sigma(XW_1)W_2} \cdot \frac{\partial\sigma(XW_1)W_2}{\partial \sigma(XW_1)}\cdot \frac{\partial \sigma(XW_1)}{\partial XW_1}\cdot\frac{\partial XW_1}{\partial X_1}\\  
+&=(S-I_y)_{m\times k}\cdot [W_2]_{d\times k}\cdot \sigma\prime(XW_1)_{m\times d}\cdot X_{m\times n}\\  
+&=X^T\cdot [\sigma\prime(XW_1)\odot((S-I_y)\cdot W_2^T)]\\  
+&[S=\text{softmax}(\sigma(XW_1))]  
+\end{align}
+$$</div>
+以上公式中$\odot$表示逐元素乘法。至于为啥这么算，俺也不知道。
 
+接下来将其推广到一般情况，即$L$层的MLP中对$W_i$求导：
+<div>$$
+\begin{align}  
+\frac{\partial l(Z_{l+1},y)}{\partial W_i} &=\frac{\partial l}{\partial Z_{l+1}}\cdot \frac{\partial Z_{l+1}}{\partial Z_{l}}\cdot...\cdot \frac{\partial Z_{i+2}}{\partial Z_{i+1}}\cdot\frac{\partial Z_{i+1}}{\partial W_{i}}\\  
+&=G_{i+1}\cdot\frac{\partial Z_{i+1}}{\partial W_{i}}=\frac{\partial l}{\partial Z_{i+1}}\cdot \frac{\partial Z_{i+1}}{W_i}\\
 
+\end{align}
+$$</div>
+
+由上述公式，我们可以得到一个反向迭代计算的$G_i$，即：
+<div>$$
+\begin{align}  
+G_i &= G_{i+1}\cdot \frac{Z_{i+1}}{Z_i} \\  
+&=G_{i+1}\cdot \frac{\partial \sigma(Z_iW_i)}{\partial Z_iW_i}\cdot\frac{\partial Z_iW_i}{Z_i}\\  
+&=G_{i+1}\cdot \sigma\prime(Z_iW_i)\cdot W_i\\  
+\end{align}
+$$</div>
+
+上面的计算都是将矩阵当作标量进行的，接下来我们考虑其维度。已知，$Z_i \in R^{m\times n_i}$是第$i$层的输入，$G_i = \frac{\partial l}{\partial Z_{i}}$，其维度如何呢？$G_i$每个元素表示损失函数$l$对第$i$层输入的每一项求偏导，也可以记作是$l$对$Z_i$求梯度，即$\nabla_{Z_i} l$，其维度显然是$m\times n_i$，继续计算前文$G_i$：
+<div>$$
+\begin{align}  
+G_i &=[G_{i+1}]_{m\times n_{i+1}}\cdot \sigma\prime(Z_iW_i)_{m\times n_{i+1}}\cdot [W_i]_{n_i\times n_{i+1}}\\  
+&= [G_{i+1}\odot \sigma\prime(Z_iW_i)]W_i^T  
+\end{align}
+$$</div>
+
+有了$G_i$，就可以继续计算$l$对$W_i$的偏导数了：
+<div>$$
+\begin{align}  
+\frac{\partial l(Z_{l+1},y)}{\partial W_i} &=G_{i+1}\cdot\frac{\partial Z_{i+1}}{\partial W_{i}} \\  
+&=G_{i+1}\cdot \frac{\partial\sigma(Z_iW_i)}{\partial Z_iW_i}\cdot\frac{\partial Z_iW_i}{\partial W_i}\\  
+&=[G_{i+1}]_{m\times n_{i+1}}\cdot \sigma\prime(Z_iW_i)_{m\times n_{i+1}}\cdot [Z_i]_{m\times n_i}\\  
+&=Z_i^T\cdot[G_{i+1}\odot\sigma\prime(Z_iW_i)]  
+\end{align}
+$$</div>
 # 参考文档

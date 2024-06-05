@@ -72,7 +72,58 @@ math: "true"
 
 如果一次输入多个数据，那么输入数据就可以组织成一个矩阵，相比起多个向量操作，矩阵的操作通常效率更高，我们在代码实现中一般也是用矩阵操作。数据集可以表示为：
 
-{{% raw %}}$\1${{% /raw %}} 
+{{% raw %}}$
+X\in R^{m\times n}=\left[ \begin{array}{c}
+	x^{(1)T}\\
+	\vdots\\
+	x^{\left( m \right) T}\\
+\end{array} \right] ,  y\in \left\{ 1,...,k \right\} ^m=\left[ \begin{array}{c}
+	y^{\left( 1 \right)}\\
+	\vdots\\
+	y^{\left( m \right)}\\
+\end{array} \right] 
+$$
+
+数据集的矩阵是一个个样本转置后堆叠 stack 起来的。那么输出可以表示为：
+
+$$
+h_{\theta}\left( X \right) =\left[ \begin{array}{c}
+	h_{\theta}\left( x^{\left( 1 \right)} \right) ^T\\
+	\vdots\\
+	h_{\theta}\left( x^{\left( m \right)} \right) ^T\\
+\end{array} \right] =\left[ \begin{array}{c}
+	x^{\left( 1 \right) T}\theta\\
+	\vdots\\
+	x^{\left( m \right) T}\theta\\
+\end{array} \right] =X\theta 
+$$
+
+关于损失函数 $l_{err}$，一种朴素的想法是将模型预测错误的模型数据量作为损失函数，即如果模型预测的正确率最高的那个类别与真实类别不相同，则损失函数为 1，否则为 0：
+
+$$
+l_{err}\left( h\left( x \right) , y \right) \,\,=\,\,\left\{ \begin{aligned}
+	0 \ &\mathrm{if} \ \mathrm{argmax} _i\,\,h_i\left( x \right) =y\\
+	1 \ &\mathrm{otherwise}\\
+\end{aligned} \right. 
+$$
+
+遗憾的是，这个符合直觉函数是不可微分的，难以对参数进行优化。更合适的做法是使用交叉熵损失函数。
+
+在此之前，我们将先讲输出过一个 softmax 函数，使之的行为更像一个概率——各个类别的概率之和为 1：
+
+$$
+z_i=p\left( \mathrm{label}=i \right) =\frac{\exp \left( h_i\left( x \right) \right)}{\sum_{j=1}^k{\exp \left( h_j\left( x \right) \right)}}
+$$
+
+那么交叉熵损失函数就可以定义为：
+
+$$
+l_{ce}\left( h\left( x \right) ,y \right) =-\log p\left( \mathrm{label}=y \right) =-h_y\left( x \right) +\log \sum_{j=1}^k{\exp \left( h_j\left( x \right) \right)}
+$$
+
+注意在计算交叉熵时，通过运算进行了化简，这使得我们可以省去计算 softmax 的过程，直接计算最终的结果。不但如此，交叉熵的计算中，如果 $h_i(x)$ 的值很小，那么取对数会出现很大的值，化简后的计算则避免了这种情况。
+
+所有的深度学习问题，都可以归结为一下这个最优化问题：${{% /raw %}} 
 \mathop {\mathrm{minimize}} \limits_{\theta}\ \ \frac{1}{m}\sum_{i=1}^m{l(h_{\theta}(x^{(i)}),y^{(i)}))}
 
 $$

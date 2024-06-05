@@ -4,7 +4,7 @@ tags:
   - CUDA
   - 深度学习系统
 date: 2024-05-28T12:24:00+08:00
-lastmod: 2024-05-29T12:49:00+08:00
+lastmod: 2024-06-05T14:22:00+08:00
 publish: true
 dir: notes
 slug: notes on cmu 10-414 deep learning system

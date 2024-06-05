@@ -81,12 +81,12 @@ X\in R^{m\times n}=\left[ \begin{array}{c}
 	y^{\left( 1 \right)}\\
 	\vdots\\
 	y^{\left( m \right)}\\
-\end{array} \right] 
-$$
+\end{array} \right]
+$$</div>
 
 数据集的矩阵是一个个样本转置后堆叠 stack 起来的。那么输出可以表示为：
 
-$$
+<div>$$
 h_{\theta}\left( X \right) =\left[ \begin{array}{c}
 	h_{\theta}\left( x^{\left( 1 \right)} \right) ^T\\
 	\vdots\\
@@ -95,72 +95,63 @@ h_{\theta}\left( X \right) =\left[ \begin{array}{c}
 	x^{\left( 1 \right) T}\theta\\
 	\vdots\\
 	x^{\left( m \right) T}\theta\\
-\end{array} \right] =X\theta 
-$$
+\end{array} \right] =X\theta
+$$</div>
 
 关于损失函数 $l_{err}$，一种朴素的想法是将模型预测错误的模型数据量作为损失函数，即如果模型预测的正确率最高的那个类别与真实类别不相同，则损失函数为 1，否则为 0：
 
-$$
+<div>$$
 l_{err}\left( h\left( x \right) , y \right) \,\,=\,\,\left\{ \begin{aligned}
 	0 \ &\mathrm{if} \ \mathrm{argmax} _i\,\,h_i\left( x \right) =y\\
 	1 \ &\mathrm{otherwise}\\
-\end{aligned} \right. 
-$$
+\end{aligned} \right.
+$$</div>
 
 遗憾的是，这个符合直觉函数是不可微分的，难以对参数进行优化。更合适的做法是使用交叉熵损失函数。
 
 在此之前，我们将先讲输出过一个 softmax 函数，使之的行为更像一个概率——各个类别的概率之和为 1：
 
-$$
+<div>$$
 z_i=p\left( \mathrm{label}=i \right) =\frac{\exp \left( h_i\left( x \right) \right)}{\sum_{j=1}^k{\exp \left( h_j\left( x \right) \right)}}
-$$
+$$</div>
 
 那么交叉熵损失函数就可以定义为：
 
-$$
+<div>$$
 l_{ce}\left( h\left( x \right) ,y \right) =-\log p\left( \mathrm{label}=y \right) =-h_y\left( x \right) +\log \sum_{j=1}^k{\exp \left( h_j\left( x \right) \right)}
-$$
+$$</div>
 
 注意在计算交叉熵时，通过运算进行了化简，这使得我们可以省去计算 softmax 的过程，直接计算最终的结果。不但如此，交叉熵的计算中，如果 $h_i(x)$ 的值很小，那么取对数会出现很大的值，化简后的计算则避免了这种情况。
 
-所有的深度学习问题，都可以归结为一下这个最优化问题：
-$$</div> 
+所有的深度学习问题，都可以归结为一下这个最优化问题：<div>$$
 \mathop {\mathrm{minimize}} \limits_{\theta}\ \ \frac{1}{m}\sum_{i=1}^m{l(h_{\theta}(x^{(i)}),y^{(i)}))}
-
-$$
+$$</div>
 我们使用梯度下降法对该问题进行优化。在此之前，首先介绍一下关于梯度。我们的优化目标可以看作一个关于$\theta \in R^{n\times k}$的函数$f$，那么其在$\theta_0$处的梯度可以表示为：
-$$
-
+<div>$$
 \nabla _{\theta}f\left( \theta _0 \right) \in R^{n\times k}=\left[ \begin{matrix}  
 	\frac{\partial f\left( \theta _0 \right)}{\partial \theta _{11}}&		\cdots&		\frac{\partial f\left( \theta _0 \right)}{\partial \theta _{k1}}\\  
 	\vdots&		\ddots&		\vdots\\  
 	\frac{\partial f\left( \theta _0 \right)}{\partial \theta _{n1}}&		\cdots&		\frac{\partial f\left( \theta _0 \right)}{\partial \theta _{nk}}\\  
-\end{matrix} \right] 
-
-$$
+\end{matrix} \right]
+$$</div>
 其中，第$i$行第$j$个元素表示除$\theta_{ij}$之外的参数都被当作常数，对$\theta_{ij}$求偏导。
 
 梯度下降，就是沿着梯度方向不断进行迭代，以求找到最佳的$\theta$使得目标函数值最小。
-$$
-
-\theta :=\theta _0-\alpha \nabla f\left( \theta _0 \right) 
-
-$$
+<div>$$
+\theta :=\theta _0-\alpha \nabla f\left( \theta _0 \right)
+$$</div>
 上式中，$\alpha$被称为学习率或者步长。
 
 事实上，在现代深度学习中，并不是使用的传统梯度下降的方案，因为其无法将所有训练集一次性读入并计算梯度。现代使用的是随机梯度下降（Stochastic Gradient Descent，SGD）
 
 首先将m个训练集样本划分一个个小batch，每个batch都有B条数据。那每一batch的数据表示为$X\in R^{B\times n}$，更新参数$\theta$的公式变为：
-$$
-
-\theta :=\theta _0-\frac{\alpha}{B}\nabla f\left( \theta _0 \right) 
-
-$$
+<div>$$
+\theta :=\theta _0-\frac{\alpha}{B}\nabla f\left( \theta _0 \right)
+$$</div>
 我们的梯度变成了每个小batch对全体样本梯度的估计。
 
 那如何计算梯度表达式呢？梯度矩阵中每个元素都是一个偏导数，我们就先从计算偏导数开始。假设$h$是个向量，我们来计算偏导数$\frac{\partial l_{ce}\left( h,y \right)}{\partial h_i}$：
-$$
-
+<div>$$
 \frac{\partial l_{ce}\left( h,y \right)}{\partial h_i}=\frac{\partial}{\partial h_i}\left( -h_y+\log \sum_{j=1}^k{\exp h_j} \right)  
 \\  
 =-1\left\{ i=y \right\} +\frac{\exp \left( h_j \right)}{\sum_{j=1}^k{\exp h_j}}  
@@ -168,15 +159,12 @@ $$
 =-1\left\{ i=y \right\} +\mathrm{softmax} \left( h \right)  
 \\  
 =z-e_y
-
-$$
+$$</div>
 
 如果$h$是个向量，那么梯度$\nabla_h l_{ce}(h,y)$就能够以向量的形式表示为：
-$$
-
+<div>$$
 \nabla_h l_{ce}(h,y) = z-e_y
-
-$$
+$$</div>
 这里我们将对$h$进行softmax标准化记为$z$，$e_y$表示对应的单位向量。
 
 事实上，我们要计算的梯度是关于$\theta$的，具体来说，表达式为$\nabla_\theta l_{ce}(\theta^Tx,y)$，其中，$\theta$是个矩阵。或许，可以使用链式法则进行求解，但是太麻烦了，这里还涉及矩阵对向量的求导。我们需要一种更加通用的求导方案。
@@ -186,27 +174,23 @@ $$
 - 一个hacky、登不上台面、但大家都在用的方案：将所有的矩阵和向量当作标量，使用链式法则求解，并进行转置操作使得结果的size符合预期，最后检查数值上结果是否正确。
 
 按照第二个方法的逻辑，过程为：
-$$
-
+<div>$$
 \frac{\partial}{\partial \theta}l_{ce}\left( \theta ^Tx,y \right) =\frac{\partial l_{ce}\left( \theta ^Tx,y \right)}{\partial \theta ^Tx}\cdot \frac{\partial \theta ^Tx}{\partial \theta}  
 \\  
 =\left[ z-e_y \right] _{k\times 1}\cdot x_{n\times 1}  
 \\  
-=x\cdot \left[ z-e_y \right] 
-
-$$
+=x\cdot \left[ z-e_y \right]
+$$</div>
 其中，$z=\text{softmax}(\theta^Tx)$。注意，倒数第二步求出的结果是两个列向量相乘，不能运算。又已知结果应该是$n\times k$的矩阵，调整向量之间的顺序即可。
 
 照猫画虎，可以写出batch的情况，$X\in R^{B\times n}$：
-$$
-
+<div>$$
 \frac{\partial}{\partial \theta}l_{ce}\left( \theta ^TX,y \right) =\frac{\partial l_{ce}\left( \theta ^TX,y \right)}{\partial \theta ^TX}\cdot \frac{\partial \theta ^TX}{\partial \theta}  
 \\  
 =\left[ Z-E_y \right] _{B\times k}\cdot X_{B\times n}  
 \\  
-=X^T\cdot \left[ Z-E_y \right] 
-
-$$
+=X^T\cdot \left[ Z-E_y \right]
+$$</div>
 
 # Lecture 3: Manual Neural Networks
 这节课，我们将人工实现全连接神经网络，之后的课程，将引入自动微分技术。

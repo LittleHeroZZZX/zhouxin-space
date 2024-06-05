@@ -82,11 +82,7 @@ X\in R^{m\times n}=\left[ \begin{array}{c}
 	\vdots\\
 	y^{\left( m \right)}\\
 \end{array} \right] 
-$$
-
-数据集的矩阵是一个个样本转置后堆叠 stack 起来的。那么输出可以表示为：
-
-$$
+<div>$$\n数据集的矩阵是一个个样本转置后堆叠 stack 起来的。那么输出可以表示为：\n$$</div>
 h_{\theta}\left( X \right) =\left[ \begin{array}{c}
 	h_{\theta}\left( x^{\left( 1 \right)} \right) ^T\\
 	\vdots\\

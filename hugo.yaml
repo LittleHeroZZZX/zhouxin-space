@@ -28,7 +28,8 @@ params:
   description: halo
   ShowCodeCopyButtons: true
   author: 周鑫
-  ShowReadingTime: true
+  hideAuthor: true
+  ShowReadingTime: false
   ShowShareButtons: false
   ShowFullTextinRSS: true
   Showtoc: true
@@ -36,7 +37,7 @@ params:
   ShowPostNavLinks: true
   ShowBreadCrumbs: true
   ShowWordCount: true
-  ShowRssButtonInSectionTermList: true
+  ShowRssButtonInSectionTermList: false
   # UseHugoToc: true
   comments: true
   defaultTheme: auto

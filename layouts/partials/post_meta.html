@@ -1,0 +1,28 @@
+{{- $scratch := newScratch }}
+
+{{- if not .Date.IsZero -}}
+{{- $scratch.Add "meta" (slice (printf "发表于%d月%d日"  (.Date.Month) (.Date.Day))) }}
+{{- end }}
+
+{{- if not .Lastmod.IsZero -}}
+{{- $scratch.Add "meta" (slice (printf "更新于%d月%d日"  (.Lastmod.Month) (.Lastmod.Day))) }}
+{{- end }}
+
+{{- if (.Param "ShowReadingTime") -}}
+{{- $scratch.Add "meta" (slice (printf "%d分钟" .ReadingTime)) }}
+{{- end }}
+
+{{- if (.Param "ShowWordCount") -}}
+{{- $wordCount := .WordCount }}
+{{- $scratch.Add "meta" (slice (printf "共%d字" $wordCount)) }}
+{{- end }}
+
+{{- if not (.Param "hideAuthor") -}}
+{{- with (partial "author.html" .) }}
+{{- $scratch.Add "meta" (slice .) }}
+{{- end }}
+{{- end }}
+
+{{- with ($scratch.Get "meta") }}
+{{- delimit . "&nbsp;·&nbsp;" | safeHTML -}}
+{{- end -}}

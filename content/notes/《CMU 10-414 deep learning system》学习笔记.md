@@ -4,7 +4,7 @@ tags:
   - CUDA
   - 深度学习系统
 date: 2024-05-28T12:24:00+08:00
-lastmod: 2024-06-07T18:01:00+08:00
+lastmod: 2024-06-07T18:17:00+08:00
 publish: true
 dir: notes
 slug: notes on cmu 10-414 deep learning system
@@ -132,13 +132,15 @@ $$</div>
 
 那如何计算梯度表达式呢？梯度矩阵中每个元素都是一个偏导数，我们就先从计算偏导数开始。假设$h$是个向量，我们来计算偏导数$\frac{\partial l_{ce}\left( h,y \right)}{\partial h_i}$：
 <div>$$
-\frac{\partial l_{ce}\left( h,y \right)}{\partial h_i}=\frac{\partial}{\partial h_i}\left( -h_y+\log \sum_{j=1}^k{\exp h_j} \right)  
+\begin{align}  
+\frac{\partial l_{ce}\left( h,y \right)}{\partial h_i}&=\frac{\partial}{\partial h_i}\left( -h_y+\log \sum_{j=1}^k{\exp h_j} \right)  
 \\  
-=-1\left\{ i=y \right\} +\frac{\exp \left( h_j \right)}{\sum_{j=1}^k{\exp h_j}}  
+&=-1\left\{ i=y \right\} +\frac{\exp \left( h_j \right)}{\sum_{j=1}^k{\exp h_j}}  
 \\  
-=-1\left\{ i=y \right\} +\mathrm{softmax} \left( h \right)  
+&=-1\left\{ i=y \right\} +\mathrm{softmax} \left( h \right)  
 \\  
-=z-e_y
+&=z-e_y  
+\end{align}
 $$</div>
 
 如果$h$是个向量，那么梯度$\nabla_h l_{ce}(h,y)$就能够以向量的形式表示为：
@@ -155,27 +157,32 @@ $$</div>
 
 按照第二个方法的逻辑，过程为：
 <div>$$
-\frac{\partial}{\partial \theta}l_{ce}\left( \theta ^Tx,y \right) =\frac{\partial l_{ce}\left( \theta ^Tx,y \right)}{\partial \theta ^Tx}\cdot \frac{\partial \theta ^Tx}{\partial \theta}  
+\begin{align}  
+\frac{\partial}{\partial \theta}l_{ce}\left( \theta ^Tx,y \right) &=\frac{\partial l_{ce}\left( \theta ^Tx,y \right)}{\partial \theta ^Tx}\cdot \frac{\partial \theta ^Tx}{\partial \theta}  
 \\  
-=\left[ z-e_y \right] _{k\times 1}\cdot x_{n\times 1}  
+&=\left[ z-e_y \right] _{k\times 1}\cdot x_{n\times 1}  
 \\  
-=x\cdot \left[ z-e_y \right]
+&=x\cdot \left[ z-e_y \right]  
+\end{align}
 $$</div>
 其中，$z=\text{softmax}(\theta^Tx)$。注意，倒数第二步求出的结果是两个列向量相乘，不能运算。又已知结果应该是$n\times k$的矩阵，调整向量之间的顺序即可。
 
 照猫画虎，可以写出batch的情况，$X\in R^{B\times n}$：
 <div>$$
-\frac{\partial}{\partial \theta}l_{ce}\left( \theta ^TX,y \right) =\frac{\partial l_{ce}\left( \theta ^TX,y \right)}{\partial \theta ^TX}\cdot \frac{\partial \theta ^TX}{\partial \theta}  
+\begin{align}  
+\frac{\partial}{\partial \theta}l_{ce}\left( \theta ^TX,y \right) &=\frac{\partial l_{ce}\left( \theta ^TX,y \right)}{\partial \theta ^TX}\cdot \frac{\partial \theta ^TX}{\partial \theta}  
 \\  
-=\left[ Z-E_y \right] _{B\times k}\cdot X_{B\times n}  
+&=\left[ Z-E_y \right] _{B\times k}\cdot X_{B\times n}  
 \\  
-=X^T\cdot \left[ Z-E_y \right]
+&=X^T\cdot \left[ Z-E_y \right]  
+\end{align}
 $$</div>
 
 # Lecture 3: Manual Neural Networks
 这节课，我们将人工实现全连接神经网络，之后的课程，将引入自动微分技术。
 ## 从线性模型转变为非线性模型
-![image.png](https://pics.zhouxin.space/202406041247481.png?x-oss-process=image/quality,q_90/format,webp)
+![image.png](https://pics.zhouxin.space/202406071816708.png?x-oss-process=image/quality,q_90/format,webp)
+
 如上图所示，线性模型本质上是将样本空间划分为线性的几个部分，这样的模型性能十分有限，因此很多不满足这样分布的实际问题就不能被解决。
 
 一种解决方案是，在将样本输入到线性分类器前，先人工挑选出某些特征，即对$X$应用一个函数$\phi$，其将$X$映射到$\phi(X)$上，映射后的空间可以被线性划分。一方面，它确实是早期实践中行之有效的方案；另一方面，人工提取特征的泛化性能有限，受限于具体问题和研究人员的对问题的洞察程度。
@@ -391,7 +398,8 @@ $$</div>
 使用计算图，除了能够节省内存外，还能清楚的看到正向计算的中间结果和反向计算之间的依赖关系，进而优化计算。
 
 ## 反向模式ad和反向传播的区别
-![image.png](https://pics.zhouxin.space/202406071614526.png?x-oss-process=image/quality,q_90/format,webp)
+![image.png](https://pics.zhouxin.space/202406071817738.png?x-oss-process=image/quality,q_90/format,webp)
+
 反向传播：
 - 在反向计算过程中使用与前向传播完全相同的计算图
 - 应用于第一代深度学习框架

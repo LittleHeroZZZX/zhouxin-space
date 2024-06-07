@@ -4,7 +4,7 @@ tags:
   - CUDA
   - 深度学习系统
 date: 2024-05-28T12:24:00+08:00
-lastmod: 2024-06-05T22:33:00+08:00
+lastmod: 2024-06-07T18:01:00+08:00
 publish: true
 dir: notes
 slug: notes on cmu 10-414 deep learning system
@@ -12,12 +12,6 @@ images:
   - https://pics.zhouxin.space/202406041918872.png?x-oss-process=image/quality,q_90/format,webp
 math: "true"
 ---
-
-# 资源存档
-
-| 课程主页 | [Deep Learning Systems](https://dlsyscourse.org/) |
-| ---- | ------------------------------------------------- |
-|      |                                                   |
 
 # Lecture 1: Introduction and Logistics
 
@@ -301,5 +295,148 @@ $$</div>
 
 > 许多课程，讲到这里就结束了，但对我们这门课来说，才刚刚开始...
 
+# Lecture 4: Automatic Differentiation
+## 基本工具
+- 计算图
+计算图是自动微分中常用的一种工具。计算图是一张有向无环图，每个节点表示（中间结果）值，每条边表示输入输出变量。例如，$y=f(x_1, x_2) = \ln(x_1)+x_1x_2-\sin x_2$对应的计算图为：
+![](https://pics.zhouxin.space/202406071612073.webp?x-oss-process=image/quality,q_90/format,webp)
+按照拓扑序列遍历这张图，就可以得到对应表达式的值。
+## 对自动微分方法的简单介绍
+深度学习中，一个核心内容就是计算梯度。这里介绍集中计算梯度的方案：
+- 偏导数定义
+梯度是由一个个偏导数组成的，可以直接根据偏导数的定义来计算梯度：
+<div>$$
+\frac{\partial f(\theta)}{\partial \theta_i} = \lim_{\epsilon \to 0}\frac{f(\theta + \epsilon e_i) - f(\theta)}{\epsilon}
+$$</div>
+其中，$e_i$是表示第$i$个方向上的单位向量。
+
+- 数值求解
+根据上述定义，我们可以选取一个很小的量代入$\epsilon$，得到数值计算偏导的方法：
+<div>$$
+\frac{\partial f(\theta)}{\partial \theta_i} = \frac{f(\theta + \epsilon e_i) - f(\theta - \epsilon e_i)}{2\epsilon} + o(\epsilon^2)
+$$</div>
+这里并不是直接使用第一项的公式，即分子不是$f(\theta + \epsilon e_i) - f(\theta)$，并且误差项是$\epsilon^2$，这是由于泰勒展开：
+<div>$$
+\begin{align}  
+f(\theta+\delta) = f(\theta)+f^\prime (\theta)\delta+\frac{1}{2}f^{\prime \prime}(\theta)\delta^2+o(\delta^3)\\  
+f(\theta-\delta) = f(\theta)+f^\prime (\theta)\delta-\frac{1}{2}f^{\prime \prime}(\theta)\delta^2+o(\delta^3)  
+\end{align}
+$$</div>
+上述两式作差，即可得到数值计算$f^\prime(\theta)$的方法。
+
+这个方法的问题在于存在误差，并且效率低下（这里要计算两次f），该方法常用于验证其它方法的具体实现是否出错。具体来说，验证如下等式是否成立：
+<div>$$
+\delta^T \nabla_\theta f(\theta) = \frac{f(\theta + \epsilon \delta) - f(\theta - \epsilon \delta)}{2 \epsilon} + o(\epsilon^2)
+$$</div>
+其中$\delta$是单位球上的某个向量，$\nabla_\theta f(\theta)$是使用其它方法计算得到的梯度。等式左边是其它方法计算的梯度在$\delta$上的投影，右侧是使用数值求解得到的梯度值，验证该等式是否成立就可以判断左侧梯度是否计算错误。
+
+- 符号微分
+符号微分，就是根据微分的计算规则使用符号手动计算微分。部分规则为：
+<div>$$
+\begin{align}  
+&\frac{\partial (f(\theta) + g(\theta))}{\partial \theta} = \frac{\partial f(\theta)}{\partial \theta} + \frac{\partial g(\theta)}{\partial \theta}\\  
+&\frac{\partial (f(\theta) g(\theta))}{\partial \theta} = g(\theta) \frac{\partial f(\theta)}{\partial \theta} + f(\theta) \frac{\partial g(\theta)}{\partial \theta}\\  
+&\frac{\partial f(g(\theta))}{\partial\theta}=\frac{\partial f(g(\theta))}{\partial g(\theta)}\frac{\partial g(\theta)}{\partial\theta}  
+\end{align}
+$$</div>
+根据该公式，可以计算得到$f(\theta) = \prod_{i=1}^{n} \theta_i$的梯度表达式为：$\frac{\partial f(\theta)}{\partial \theta_k} = \prod_{j \neq k}^{n} \theta_j$。如果我们根据该公式来计算梯度，会发现需要计算$n(n-2)$次乘法才能得到结果。这是因为在符号运算的过程中，我们忽略了可以反复利用的中间结果。
+
+- 正向模式自动微分 forward mode automatic differentiation
+沿着计算图的拓扑序列，同样可以计算出输出关于输入的导数，还是以$y=f(x_1, x_2) = \ln(x_1)+x_1x_2-\sin x_2$为例，其计算图为：
+![image.png](https://pics.zhouxin.space/202406071612328.png?x-oss-process=image/quality,q_90/format,webp)
+
+
+整个梯度计算过程如下，在此过程中应用到了具体函数的求导公式：
+<div>$$
+\begin{aligned}  
+&\dot\nu_{1} =1 \\  
+&\dot\nu_{2} =0 \\  
+&\dot{\nu}_{3} =v_{1}/v_{1}=0.5 \\  
+&\dot{\nu}_{4} =\hat{v}_{1}v_{2}+v_{2}v_{1}=1\times5+0\times2=5 \\  
+&\dot\nu_{5} =\dot{v_{2}}\cos v_{2}=0\times\cos5=0 \\  
+&\dot{\nu}_{6} =v_{3}+v_{4}=0.5+5=5.5 \\  
+&\dot{\nu}_{7} =\dot{v_{6}}-\dot{v_{5}}=5.5-0=5.5  
+\end{aligned}
+$$</div>
+
+对于$f:\mathbb{R}^n \to \mathbb{R}^k$，前向传播需要$n$次前向计算才能得到关于每个输入的梯度，这就意味前向传播适合$n$比较小、$k$比较大的情况。但是在深度学习中，通常$n$比较大、$k$比较小。
+
+- 反向模式自动微分
+定义$\text{adjoint}:\overline{v_i}=\frac{\partial y}{\partial v_i}$,其表示
+整个计算过程如下所示，需要注意的是$\overline{v_2}$的计算过程，其在计算图上延伸出了两个节点，因此梯度也由两部分相加：
+<div>$$
+\begin{align}  
+&\overline{v_{7}}=\frac{\partial y}{\partial v_{7}}=1\\  
+&\overline{v_{6}}=\overline{v_{7}}\frac{\partial v_{7}}{\partial v_{6}}=\overline{v_{7}}\times1=1\\  
+&\overline{v_{5}}=\overline{v_{7}}\frac{\partial v_{7}}{\partial v_{5}}=\overline{v_{7}}\times(-1)=-1\\  
+&\overline{v_{4}}=\overline{v_{6}}\frac{\partial v_{6}}{\partial v_{4}}=\overline{v_{6}}\times1=1\\  
+&\overline{v_{3}}=\overline{v_{6}}\frac{\partial v_{6}}{\partial v_{3}}=\overline{v_{6}}\times1=1\\  
+&\overline{v_{2}}=\overline{v_{5}}\frac{\partial v_{5}}{\partial v_{2}}+\overline{v_{4}}\frac{\partial v_{4}}{\partial v_{2}}=\overline{v_{5}}\times\cos v_{2}+\overline{v_{4}}\times v_{1}\\  
+&\overline{v_{1}}=\overline{v_{4}} \frac{\partial v_{4}}{\partial v_{1}}+\overline{v_{3}} \frac{\partial v_{3}}{\partial v_{1}}=\overline{v_{4}}\times v_{2}+ \overline{v_{3}} \frac{1}{v_{1}}=5+\frac{1}{2}=5.5
+
+\end{align}
+$$</div>
+
+接下来我们讨论一下为什么前文中$\overline{v_2}$由两部分组成。考虑如下一个计算图：
+![image.png](https://pics.zhouxin.space/202406071612078.png?x-oss-process=image/quality,q_90/format,webp)
+
+$y$可以被视作关于$v_2$和$v_3$的函数，即$y = f(v_2, v_3)$，那么：
+<div>$$
+\overline{v_{1}}=\frac{\partial y}{\partial v_{1}}=\frac{\partial f(v_{2},v_{3})}{\partial v_{2}}\frac{\partial v_{2}}{\partial v_{1}}+\frac{\partial f(v_{2},v_{3})}{\partial v_{3}} \frac{\partial v_{3}}{\partial v_{1}}=\overline{v_{2}} \frac{\partial v_{2}}{\partial v_{1}}+\overline{v_{3}} \frac{\partial v_{3}}{\partial v_{1}}
+$$</div>
+因此，定义partial adjoint $\overline{v_{i\to j}} = \overline{v_j} \frac{\partial v_j}{\partial v_i}$，那么$\overline{v_i}$可以表示为：
+<div>$$
+\overline{\nu_i}=\sum_{j\in next(i)}\overline{\nu_{i\rightarrow j}}
+$$</div>
+
+## 反向模式微分算法的实现
+基于以上分析，可以写出如下的实现反向模式微分算法的伪代码：
+![image.png](https://pics.zhouxin.space/202406071612188.png?x-oss-process=image/quality,q_90/format,webp)
+
+其中`node_to_grad`是一个字典，保存着每个节点的partial adjoint值。由于是按照逆拓扑序列遍历的节点，因此可以保证当遍历到$i$时，所有以$i$为输入的节点（k节点所在的集合）都已被遍历完毕，即$\overline{v_k}$已经计算出来。
+
+那么partial adjoint值使用什么数据结构保存呢？一个常见的思路是使用邻接矩阵，但是这个矩阵中有大量元素是不存在了，空间浪费很大。我们可以在原有计算图的基础上进行拓展来保存partial adjoint和adjonitzhi之间的计算关系。
+
+如下图所示，黑色部分是原表达式的计算图，红色部分是将adjoint和partial adjount的计算图：
+![image.png](https://pics.zhouxin.space/202406071611419.png?x-oss-process=image/quality,q_90/format,webp)
+
+
+
+
+使用计算图，除了能够节省内存外，还能清楚的看到正向计算的中间结果和反向计算之间的依赖关系，进而优化计算。
+
+## 反向模式ad和反向传播的区别
+![image.png](https://pics.zhouxin.space/202406071614526.png?x-oss-process=image/quality,q_90/format,webp)
+反向传播：
+- 在反向计算过程中使用与前向传播完全相同的计算图
+- 应用于第一代深度学习框架
+
+反向AD：
+- 为adjoint在计算图中创建独立的节点
+- 被应用于现代深度学习框架
+
+现代普遍应用反向AD的原因：
+- 某些损失函数是关于梯度的函数，这种情况下需要计算梯度的梯度，但反向传播就不能计算此类情况，而在反向AD中只要增加一个节点后在此计算梯度即可；
+- 反向AD优化空间更大。
+
+## 考虑Tensor的反向模式AD
+前面都是在假设中间变量是标量的基础上讨论的，接下来我们将其推广到Tensor上。
+
+首先推广adjoint，定义对于一个Tensor$Z$，其adjoint$\overline{Z}$为：
+<div>$$
+=\begin{bmatrix}\frac{\partial y}{\partial Z_{1,1}}&...&\frac{\partial y}{\partial Z_{1,n}}\\...&...&...\\\frac{\partial y}{\partial Z_{m,1}}&...&\frac{\partial y}{\partial Z_{m,n}}\end{bmatrix}
+$$</div>
+鉴于
+<div>$$
+\begin{aligned}Z_{ij}&=\sum_kX_{ik}W_{kj}\\v&=f(Z)\end{aligned}
+$$</div>
+那么在计算$\overline{X_{i,k}}$时，需要将所有计算图上以$X_{i,k}$为输入的节点都找出来，即$Z$的第$i$行的每个元素。因此$\overline{X_{i,k}}$的计算公式为：
+<div>$$
+\overline{X_{i,k}}=\sum_{j}\frac{\partial Z_{i,j}}{\partial X_{i,k}}\bar{Z}_{i,j}=\sum_{j}W_{k,j}\bar{Z}_{i,j}
+$$</div>
+上述公式记为矩阵形式为：
+<div>$$
+\overline X = \overline Z W^T
+$$</div>
 
 # 参考文档

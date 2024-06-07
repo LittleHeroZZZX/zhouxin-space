@@ -66,7 +66,7 @@ math: "true"
 
 如果一次输入多个数据，那么输入数据就可以组织成一个矩阵，相比起多个向量操作，矩阵的操作通常效率更高，我们在代码实现中一般也是用矩阵操作。数据集可以表示为：
 
-<div>$$
+{{< math_block >}}
 X\in R^{m\times n}=\left[ \begin{array}{c}
 	x^{(1)T}\\
 	\vdots\\
@@ -76,11 +76,11 @@ X\in R^{m\times n}=\left[ \begin{array}{c}
 	\vdots\\
 	y^{\left( m \right)}\\
 \end{array} \right]
-$$</div>
+{{< /math_block >}}
 
 数据集的矩阵是一个个样本转置后堆叠 stack 起来的。那么输出可以表示为：
 
-<div>$$
+{{< math_block >}}
 h_{\theta}\left( X \right) =\left[ \begin{array}{c}
 	h_{\theta}\left( x^{\left( 1 \right)} \right) ^T\\
 	\vdots\\
@@ -90,62 +90,62 @@ h_{\theta}\left( X \right) =\left[ \begin{array}{c}
 	\vdots\\
 	x^{\left( m \right) T}\theta\\
 \end{array} \right] =X\theta
-$$</div>
+{{< /math_block >}}
 
 关于损失函数 $l_{err}$，一种朴素的想法是将模型预测错误的模型数据量作为损失函数，即如果模型预测的正确率最高的那个类别与真实类别不相同，则损失函数为 1，否则为 0：
 
-<div>$$
+{{< math_block >}}
 l_{err}\left( h\left( x \right) , y \right) \,\,=\,\,\left\{ \begin{aligned}
 	0 \ &\mathrm{if} \ \mathrm{argmax} _i\,\,h_i\left( x \right) =y\\
 	1 \ &\mathrm{otherwise}\\
 \end{aligned} \right.
-$$</div>
+{{< /math_block >}}
 
 遗憾的是，这个符合直觉函数是不可微分的，难以对参数进行优化。更合适的做法是使用交叉熵损失函数。
 
 在此之前，我们将先讲输出过一个 softmax 函数，使之的行为更像一个概率——各个类别的概率之和为 1：
 
-<div>$$
+{{< math_block >}}
 z_i=p\left( \mathrm{label}=i \right) =\frac{\exp \left( h_i\left( x \right) \right)}{\sum_{j=1}^k{\exp \left( h_j\left( x \right) \right)}}
-$$</div>
+{{< /math_block >}}
 
 那么交叉熵损失函数就可以定义为：
 
-<div>$$
+{{< math_block >}}
 l_{ce}\left( h\left( x \right) ,y \right) =-\log p\left( \mathrm{label}=y \right) =-h_y\left( x \right) +\log \sum_{j=1}^k{\exp \left( h_j\left( x \right) \right)}
-$$</div>
+{{< /math_block >}}
 
 注意在计算交叉熵时，通过运算进行了化简，这使得我们可以省去计算 softmax 的过程，直接计算最终的结果。不但如此，交叉熵的计算中，如果 $h_i(x)$ 的值很小，那么取对数会出现很大的值，化简后的计算则避免了这种情况。
 
-所有的深度学习问题，都可以归结为一下这个最优化问题：<div>$$
+所有的深度学习问题，都可以归结为一下这个最优化问题：{{< math_block >}}
 \mathop {\mathrm{minimize}} \limits_{\theta}\ \ \frac{1}{m}\sum_{i=1}^m{l(h_{\theta}(x^{(i)}),y^{(i)}))}
-$$</div>
+{{< /math_block >}}
 我们使用梯度下降法对该问题进行优化。在此之前，首先介绍一下关于梯度。我们的优化目标可以看作一个关于$\theta \in R^{n\times k}$的函数$f$，那么其在$\theta_0$处的梯度可以表示为：
-<div>$$
+{{< math_block >}}
 \nabla _{\theta}f\left( \theta _0 \right) \in R^{n\times k}=\left[ \begin{matrix}  
 	\frac{\partial f\left( \theta _0 \right)}{\partial \theta _{11}}&		\cdots&		\frac{\partial f\left( \theta _0 \right)}{\partial \theta _{k1}}\\  
 	\vdots&		\ddots&		\vdots\\  
 	\frac{\partial f\left( \theta _0 \right)}{\partial \theta _{n1}}&		\cdots&		\frac{\partial f\left( \theta _0 \right)}{\partial \theta _{nk}}\\  
 \end{matrix} \right]
-$$</div>
+{{< /math_block >}}
 其中，第$i$行第$j$个元素表示除$\theta_{ij}$之外的参数都被当作常数，对$\theta_{ij}$求偏导。
 
 梯度下降，就是沿着梯度方向不断进行迭代，以求找到最佳的$\theta$使得目标函数值最小。
-<div>$$
+{{< math_block >}}
 \theta :=\theta _0-\alpha \nabla f\left( \theta _0 \right)
-$$</div>
+{{< /math_block >}}
 上式中，$\alpha$被称为学习率或者步长。
 
 事实上，在现代深度学习中，并不是使用的传统梯度下降的方案，因为其无法将所有训练集一次性读入并计算梯度。现代使用的是随机梯度下降（Stochastic Gradient Descent，SGD）
 
 首先将m个训练集样本划分一个个小batch，每个batch都有B条数据。那每一batch的数据表示为$X\in R^{B\times n}$，更新参数$\theta$的公式变为：
-<div>$$
+{{< math_block >}}
 \theta :=\theta _0-\frac{\alpha}{B}\nabla f\left( \theta _0 \right)
-$$</div>
+{{< /math_block >}}
 我们的梯度变成了每个小batch对全体样本梯度的估计。
 
 那如何计算梯度表达式呢？梯度矩阵中每个元素都是一个偏导数，我们就先从计算偏导数开始。假设$h$是个向量，我们来计算偏导数$\frac{\partial l_{ce}\left( h,y \right)}{\partial h_i}$：
-<div>$$
+{{< math_block >}}
 \begin{align}  
 \frac{\partial l_{ce}\left( h,y \right)}{\partial h_i}&=\frac{\partial}{\partial h_i}\left( -h_y+\log \sum_{j=1}^k{\exp h_j} \right)  
 \\  
@@ -155,12 +155,12 @@ $$</div>
 \\  
 &=z-e_y  
 \end{align}
-$$</div>
+{{< /math_block >}}
 
 如果$h$是个向量，那么梯度$\nabla_h l_{ce}(h,y)$就能够以向量的形式表示为：
-<div>$$
+{{< math_block >}}
 \nabla_h l_{ce}(h,y) = z-e_y
-$$</div>
+{{< /math_block >}}
 这里我们将对$h$进行softmax标准化记为$z$，$e_y$表示对应的单位向量。
 
 事实上，我们要计算的梯度是关于$\theta$的，具体来说，表达式为$\nabla_\theta l_{ce}(\theta^Tx,y)$，其中，$\theta$是个矩阵。或许，可以使用链式法则进行求解，但是太麻烦了，这里还涉及矩阵对向量的求导。我们需要一种更加通用的求导方案。
@@ -170,7 +170,7 @@ $$</div>
 - 一个hacky、登不上台面、但大家都在用的方案：将所有的矩阵和向量当作标量，使用链式法则求解，并进行转置操作使得结果的size符合预期，最后检查数值上结果是否正确。
 
 按照第二个方法的逻辑，过程为：
-<div>$$
+{{< math_block >}}
 \begin{align}  
 \frac{\partial}{\partial \theta}l_{ce}\left( \theta ^Tx,y \right) &=\frac{\partial l_{ce}\left( \theta ^Tx,y \right)}{\partial \theta ^Tx}\cdot \frac{\partial \theta ^Tx}{\partial \theta}  
 \\  
@@ -178,11 +178,11 @@ $$</div>
 \\  
 &=x\cdot \left[ z-e_y \right]  
 \end{align}
-$$</div>
+{{< /math_block >}}
 其中，$z=\text{softmax}(\theta^Tx)$。注意，倒数第二步求出的结果是两个列向量相乘，不能运算。又已知结果应该是$n\times k$的矩阵，调整向量之间的顺序即可。
 
 照猫画虎，可以写出batch的情况，$X\in R^{B\times n}$：
-<div>$$
+{{< math_block >}}
 \begin{align}  
 \frac{\partial}{\partial \theta}l_{ce}\left( \theta ^TX,y \right) &=\frac{\partial l_{ce}\left( \theta ^TX,y \right)}{\partial \theta ^TX}\cdot \frac{\partial \theta ^TX}{\partial \theta}  
 \\  
@@ -190,7 +190,7 @@ $$</div>
 \\  
 &=X^T\cdot \left[ Z-E_y \right]  
 \end{align}
-$$</div>
+{{< /math_block >}}
 
 # Lecture 3: Manual Neural Networks
 这节课，我们将人工实现全连接神经网络，之后的课程，将引入自动微分技术。
@@ -210,11 +210,11 @@ $$</div>
 神经网络最初的确起源于模拟人类神经元这一动机，但随着其发展，越来越多的神经网络模型出现，与人类大脑神经网络越来越不相关。
 
 以双层神经网络为例，其形式化表示为$h_\theta(x) = W_2^T \sigma(W_1^T x)$，所有可学习的参数使用$\theta$表示。以batch的矩阵形式表示为：
-<div>$$
+{{< math_block >}}
 h_\theta(X) = \sigma(XW_1)W_2
-$$</div>
+{{< /math_block >}}
 接下来给出L层多层感知机（a.k.a. MLP、前馈神经网络、全连接层）的形式化表达：
-<div>$$
+{{< math_block >}}
 \left\{\begin{array}{l}  
 Z_{i+1} = \sigma_i(Z_iW_i), i=1,...,L  \\  
 Z_1 = X\\  
@@ -223,7 +223,7 @@ h_\theta(X) =Z_{L+1}\\
 \sigma_i:R\rightarrow R
 
 \end{array} \right.
-$$</div>
+{{< /math_block >}}
 每一层的输入为$Z_i$，输出为$Z_{i+1}$。
 
 为什么要是用深度网络而不是宽度网络？没有很完美的解释，但最好并且最现实的解释是：经验证明，当参数量固定时，深度网络性能优于宽度网络。
@@ -231,65 +231,65 @@ $$</div>
 与Lecture 2一致，使用交叉熵作为损失函数，使用SGD作为优化算法，唯一的区别是，这次要对MLP网络求解梯度。
 
 对于两层神经网络$h_\theta(X) = \sigma(XW_1)W_2$，待求的梯度表达式为：
-<div>$$
+{{< math_block >}}
 \nabla_{\{W_1, W_2\}}l_{ce}(\sigma(XW_1)W_2,y)
-$$</div>
+{{< /math_block >}}
 对于$W_2$的梯度，其与Lecture 2的计算类似：
-<div>$$
+{{< math_block >}}
 \begin{align}  
 \frac{\partial l_{ce}(\sigma(XW_1)W_2,y)}{\partial W_2}&=\frac{\partial l_{ce}(\sigma(XW_1)W_2,y)}{\partial \sigma(XW_1)W_2} \cdot \frac{\partial\sigma(XW_1)W_2}{\partial W_2}\\  
 &=(S-I_y)_{m\times k}\cdot \sigma(XW_1)_{m\times d}\\  
 &=\sigma(XW_1)^T\cdot (S-I_y)\\  
 &[S=\text{softmax}(\sigma(XW_1))]  
 \end{align}
-$$</div>
+{{< /math_block >}}
 
 对于$W_1$的梯度，其需要多次应用链式法则，但并不难计算：
-<div>$$
+{{< math_block >}}
 \begin{align}  
 \frac{\partial l_{ce}(\sigma(XW_1)W_2,y)}{\partial W_1}&=\frac{\partial l_{ce}(\sigma(XW_1)W_2,y)}{\partial \sigma(XW_1)W_2} \cdot \frac{\partial\sigma(XW_1)W_2}{\partial \sigma(XW_1)}\cdot \frac{\partial \sigma(XW_1)}{\partial XW_1}\cdot\frac{\partial XW_1}{\partial X_1}\\  
 &=(S-I_y)_{m\times k}\cdot [W_2]_{d\times k}\cdot \sigma\prime(XW_1)_{m\times d}\cdot X_{m\times n}\\  
 &=X^T\cdot [\sigma\prime(XW_1)\odot((S-I_y)\cdot W_2^T)]\\  
 &[S=\text{softmax}(\sigma(XW_1))]  
 \end{align}
-$$</div>
+{{< /math_block >}}
 以上公式中$\odot$表示逐元素乘法。至于为啥这么算，俺也不知道。
 
 接下来将其推广到一般情况，即$L$层的MLP中对$W_i$求导：
-<div>$$
+{{< math_block >}}
 \begin{align}  
 \frac{\partial l(Z_{l+1},y)}{\partial W_i} &=\frac{\partial l}{\partial Z_{l+1}}\cdot \frac{\partial Z_{l+1}}{\partial Z_{l}}\cdot...\cdot \frac{\partial Z_{i+2}}{\partial Z_{i+1}}\cdot\frac{\partial Z_{i+1}}{\partial W_{i}}\\  
 &=G_{i+1}\cdot\frac{\partial Z_{i+1}}{\partial W_{i}}=\frac{\partial l}{\partial Z_{i+1}}\cdot \frac{\partial Z_{i+1}}{W_i}\\
 
 \end{align}
-$$</div>
+{{< /math_block >}}
 
 由上述公式，我们可以得到一个反向迭代计算的$G_i$，即：
-<div>$$
+{{< math_block >}}
 \begin{align}  
 G_i &= G_{i+1}\cdot \frac{Z_{i+1}}{Z_i} \\  
 &=G_{i+1}\cdot \frac{\partial \sigma(Z_iW_i)}{\partial Z_iW_i}\cdot\frac{\partial Z_iW_i}{Z_i}\\  
 &=G_{i+1}\cdot \sigma\prime(Z_iW_i)\cdot W_i\\  
 \end{align}
-$$</div>
+{{< /math_block >}}
 
 上面的计算都是将矩阵当作标量进行的，接下来我们考虑其维度。已知，$Z_i \in R^{m\times n_i}$是第$i$层的输入，$G_i = \frac{\partial l}{\partial Z_{i}}$，其维度如何呢？$G_i$每个元素表示损失函数$l$对第$i$层输入的每一项求偏导，也可以记作是$l$对$Z_i$求梯度，即$\nabla_{Z_i} l$，其维度显然是$m\times n_i$，继续计算前文$G_i$：
-<div>$$
+{{< math_block >}}
 \begin{align}  
 G_i &=[G_{i+1}]_{m\times n_{i+1}}\cdot \sigma\prime(Z_iW_i)_{m\times n_{i+1}}\cdot [W_i]_{n_i\times n_{i+1}}\\  
 &= [G_{i+1}\odot \sigma\prime(Z_iW_i)]W_i^T  
 \end{align}
-$$</div>
+{{< /math_block >}}
 
 有了$G_i$，就可以继续计算$l$对$W_i$的偏导数了：
-<div>$$
+{{< math_block >}}
 \begin{align}  
 \frac{\partial l(Z_{l+1},y)}{\partial W_i} &=G_{i+1}\cdot\frac{\partial Z_{i+1}}{\partial W_{i}} \\  
 &=G_{i+1}\cdot \frac{\partial\sigma(Z_iW_i)}{\partial Z_iW_i}\cdot\frac{\partial Z_iW_i}{\partial W_i}\\  
 &=[G_{i+1}]_{m\times n_{i+1}}\cdot \sigma\prime(Z_iW_i)_{m\times n_{i+1}}\cdot [Z_i]_{m\times n_i}\\  
 &=Z_i^T\cdot[G_{i+1}\odot\sigma\prime(Z_iW_i)]  
 \end{align}
-$$</div>
+{{< /math_block >}}
 
 至此，每个小组件都已制造完毕，让我们来把它装起来吧！
 - 前向传播
@@ -313,40 +313,40 @@ $$</div>
 - 偏导数定义
 - 
 梯度是由一个个偏导数组成的，可以直接根据偏导数的定义来计算梯度：
-<div>$$
+{{< math_block >}}
 \frac{\partial f(\theta)}{\partial \theta_i} = \lim_{\epsilon \to 0}\frac{f(\theta + \epsilon e_i) - f(\theta)}{\epsilon}
-$$</div>
+{{< /math_block >}}
 其中，$e_i$是表示第$i$个方向上的单位向量。
 
 - 数值求解
 根据上述定义，我们可以选取一个很小的量代入$\epsilon$，得到数值计算偏导的方法：
-<div>$$
+{{< math_block >}}
 \frac{\partial f(\theta)}{\partial \theta_i} = \frac{f(\theta + \epsilon e_i) - f(\theta - \epsilon e_i)}{2\epsilon} + o(\epsilon^2)
-$$</div>
+{{< /math_block >}}
 这里并不是直接使用第一项的公式，即分子不是$f(\theta + \epsilon e_i) - f(\theta)$，并且误差项是$\epsilon^2$，这是由于泰勒展开：
-<div>$$
+{{< math_block >}}
 \begin{align}  
 f(\theta+\delta) = f(\theta)+f^\prime (\theta)\delta+\frac{1}{2}f^{\prime \prime}(\theta)\delta^2+o(\delta^3)\\  
 f(\theta-\delta) = f(\theta)+f^\prime (\theta)\delta-\frac{1}{2}f^{\prime \prime}(\theta)\delta^2+o(\delta^3)  
 \end{align}
-$$</div>
+{{< /math_block >}}
 上述两式作差，即可得到数值计算$f^\prime(\theta)$的方法。
 
 这个方法的问题在于存在误差，并且效率低下（这里要计算两次f），该方法常用于验证其它方法的具体实现是否出错。具体来说，验证如下等式是否成立：
-<div>$$
+{{< math_block >}}
 \delta^T \nabla_\theta f(\theta) = \frac{f(\theta + \epsilon \delta) - f(\theta - \epsilon \delta)}{2 \epsilon} + o(\epsilon^2)
-$$</div>
+{{< /math_block >}}
 其中$\delta$是单位球上的某个向量，$\nabla_\theta f(\theta)$是使用其它方法计算得到的梯度。等式左边是其它方法计算的梯度在$\delta$上的投影，右侧是使用数值求解得到的梯度值，验证该等式是否成立就可以判断左侧梯度是否计算错误。
 
 - 符号微分
 符号微分，就是根据微分的计算规则使用符号手动计算微分。部分规则为：
-<div>$$
+{{< math_block >}}
 \begin{align}  
 &\frac{\partial (f(\theta) + g(\theta))}{\partial \theta} = \frac{\partial f(\theta)}{\partial \theta} + \frac{\partial g(\theta)}{\partial \theta}\\  
 &\frac{\partial (f(\theta) g(\theta))}{\partial \theta} = g(\theta) \frac{\partial f(\theta)}{\partial \theta} + f(\theta) \frac{\partial g(\theta)}{\partial \theta}\\  
 &\frac{\partial f(g(\theta))}{\partial\theta}=\frac{\partial f(g(\theta))}{\partial g(\theta)}\frac{\partial g(\theta)}{\partial\theta}  
 \end{align}
-$$</div>
+{{< /math_block >}}
 根据该公式，可以计算得到$f(\theta) = \prod_{i=1}^{n} \theta_i$的梯度表达式为：$\frac{\partial f(\theta)}{\partial \theta_k} = \prod_{j \neq k}^{n} \theta_j$。如果我们根据该公式来计算梯度，会发现需要计算$n(n-2)$次乘法才能得到结果。这是因为在符号运算的过程中，我们忽略了可以反复利用的中间结果。
 
 - 正向模式自动微分 forward mode automatic differentiation
@@ -355,7 +355,7 @@ $$</div>
 
 
 整个梯度计算过程如下，在此过程中应用到了具体函数的求导公式：
-<div>$$
+{{< math_block >}}
 \begin{aligned}  
 &\dot\nu_{1} =1 \\  
 &\dot\nu_{2} =0 \\  
@@ -365,14 +365,14 @@ $$</div>
 &\dot{\nu}_{6} =v_{3}+v_{4}=0.5+5=5.5 \\  
 &\dot{\nu}_{7} =\dot{v_{6}}-\dot{v_{5}}=5.5-0=5.5  
 \end{aligned}
-$$</div>
+{{< /math_block >}}
 
 对于$f:\mathbb{R}^n \to \mathbb{R}^k$，前向传播需要$n$次前向计算才能得到关于每个输入的梯度，这就意味前向传播适合$n$比较小、$k$比较大的情况。但是在深度学习中，通常$n$比较大、$k$比较小。
 
 - 反向模式自动微分
 定义$\text{adjoint}:\overline{v_i}=\frac{\partial y}{\partial v_i}$,其表示
 整个计算过程如下所示，需要注意的是$\overline{v_2}$的计算过程，其在计算图上延伸出了两个节点，因此梯度也由两部分相加：
-<div>$$
+{{< math_block >}}
 \begin{align}  
 &\overline{v_{7}}=\frac{\partial y}{\partial v_{7}}=1\\  
 &\overline{v_{6}}=\overline{v_{7}}\frac{\partial v_{7}}{\partial v_{6}}=\overline{v_{7}}\times1=1\\  
@@ -383,19 +383,19 @@ $$</div>
 &\overline{v_{1}}=\overline{v_{4}} \frac{\partial v_{4}}{\partial v_{1}}+\overline{v_{3}} \frac{\partial v_{3}}{\partial v_{1}}=\overline{v_{4}}\times v_{2}+ \overline{v_{3}} \frac{1}{v_{1}}=5+\frac{1}{2}=5.5
 
 \end{align}
-$$</div>
+{{< /math_block >}}
 
 接下来我们讨论一下为什么前文中$\overline{v_2}$由两部分组成。考虑如下一个计算图：
 ![image.png](https://pics.zhouxin.space/202406071612078.png?x-oss-process=image/quality,q_90/format,webp)
 
 $y$可以被视作关于$v_2$和$v_3$的函数，即$y = f(v_2, v_3)$，那么：
-<div>$$
+{{< math_block >}}
 \overline{v_{1}}=\frac{\partial y}{\partial v_{1}}=\frac{\partial f(v_{2},v_{3})}{\partial v_{2}}\frac{\partial v_{2}}{\partial v_{1}}+\frac{\partial f(v_{2},v_{3})}{\partial v_{3}} \frac{\partial v_{3}}{\partial v_{1}}=\overline{v_{2}} \frac{\partial v_{2}}{\partial v_{1}}+\overline{v_{3}} \frac{\partial v_{3}}{\partial v_{1}}
-$$</div>
+{{< /math_block >}}
 因此，定义partial adjoint $\overline{v_{i\to j}} = \overline{v_j} \frac{\partial v_j}{\partial v_i}$，那么$\overline{v_i}$可以表示为：
-<div>$$
+{{< math_block >}}
 \overline{\nu_i}=\sum_{j\in next(i)}\overline{\nu_{i\rightarrow j}}
-$$</div>
+{{< /math_block >}}
 
 ## 反向模式微分算法的实现
 基于以上分析，可以写出如下的实现反向模式微分算法的伪代码：
@@ -432,20 +432,20 @@ $$</div>
 前面都是在假设中间变量是标量的基础上讨论的，接下来我们将其推广到Tensor上。
 
 首先推广adjoint，定义对于一个Tensor$Z$，其adjoint$\overline{Z}$为：
-<div>$$
+{{< math_block >}}
 =\begin{bmatrix}\frac{\partial y}{\partial Z_{1,1}}&...&\frac{\partial y}{\partial Z_{1,n}}\\...&...&...\\\frac{\partial y}{\partial Z_{m,1}}&...&\frac{\partial y}{\partial Z_{m,n}}\end{bmatrix}
-$$</div>
+{{< /math_block >}}
 鉴于
-<div>$$
+{{< math_block >}}
 \begin{aligned}Z_{ij}&=\sum_kX_{ik}W_{kj}\\v&=f(Z)\end{aligned}
-$$</div>
+{{< /math_block >}}
 那么在计算$\overline{X_{i,k}}$时，需要将所有计算图上以$X_{i,k}$为输入的节点都找出来，即$Z$的第$i$行的每个元素。因此$\overline{X_{i,k}}$的计算公式为：
-<div>$$
+{{< math_block >}}
 \overline{X_{i,k}}=\sum_{j}\frac{\partial Z_{i,j}}{\partial X_{i,k}}\bar{Z}_{i,j}=\sum_{j}W_{k,j}\bar{Z}_{i,j}
-$$</div>
+{{< /math_block >}}
 上述公式记为矩阵形式为：
-<div>$$
+{{< math_block >}}
 \overline X = \overline Z W^T
-$$</div>
+{{< /math_block >}}
 
 # 参考文档

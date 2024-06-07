@@ -95,10 +95,10 @@ h_{\theta}\left( X \right) =\left[ \begin{array}{c}
 关于损失函数 $l_{err}$，一种朴素的想法是将模型预测错误的模型数据量作为损失函数，即如果模型预测的正确率最高的那个类别与真实类别不相同，则损失函数为 1，否则为 0：
 
 {{< math_block >}}
-l_{err}\left( h\left( x \right) , y \right) \,\,=\,\,\left\{ \begin{aligned}
+l_{err}\left( h\left( x \right) , y \right) \,\,=\,\,\left\{ \begin{align*ed}
 	0 \ &\mathrm{if} \ \mathrm{argmax} _i\,\,h_i\left( x \right) =y\\
 	1 \ &\mathrm{otherwise}\\
-\end{aligned} \right.
+\end{align*ed} \right.
 {{< /math_block >}}
 
 遗憾的是，这个符合直觉函数是不可微分的，难以对参数进行优化。更合适的做法是使用交叉熵损失函数。
@@ -146,7 +146,7 @@ l_{ce}\left( h\left( x \right) ,y \right) =-\log p\left( \mathrm{label}=y \right
 
 那如何计算梯度表达式呢？梯度矩阵中每个元素都是一个偏导数，我们就先从计算偏导数开始。假设$h$是个向量，我们来计算偏导数$\frac{\partial l_{ce}\left( h,y \right)}{\partial h_i}$：
 {{< math_block >}}
-\begin{align}  
+\begin{align*}  
 \frac{\partial l_{ce}\left( h,y \right)}{\partial h_i}&=\frac{\partial}{\partial h_i}\left( -h_y+\log \sum_{j=1}^k{\exp h_j} \right)  
 \\  
 &=-1\left\{ i=y \right\} +\frac{\exp \left( h_j \right)}{\sum_{j=1}^k{\exp h_j}}  
@@ -154,7 +154,7 @@ l_{ce}\left( h\left( x \right) ,y \right) =-\log p\left( \mathrm{label}=y \right
 &=-1\left\{ i=y \right\} +\mathrm{softmax} \left( h \right)  
 \\  
 &=z-e_y  
-\end{align}
+\end{align*}
 {{< /math_block >}}
 
 如果$h$是个向量，那么梯度$\nabla_h l_{ce}(h,y)$就能够以向量的形式表示为：
@@ -171,25 +171,25 @@ l_{ce}\left( h\left( x \right) ,y \right) =-\log p\left( \mathrm{label}=y \right
 
 按照第二个方法的逻辑，过程为：
 {{< math_block >}}
-\begin{align}  
+\begin{align*}  
 \frac{\partial}{\partial \theta}l_{ce}\left( \theta ^Tx,y \right) &=\frac{\partial l_{ce}\left( \theta ^Tx,y \right)}{\partial \theta ^Tx}\cdot \frac{\partial \theta ^Tx}{\partial \theta}  
 \\  
 &=\left[ z-e_y \right] _{k\times 1}\cdot x_{n\times 1}  
 \\  
 &=x\cdot \left[ z-e_y \right]  
-\end{align}
+\end{align*}
 {{< /math_block >}}
 其中，$z=\text{softmax}(\theta^Tx)$。注意，倒数第二步求出的结果是两个列向量相乘，不能运算。又已知结果应该是$n\times k$的矩阵，调整向量之间的顺序即可。
 
 照猫画虎，可以写出batch的情况，$X\in R^{B\times n}$：
 {{< math_block >}}
-\begin{align}  
+\begin{align*}  
 \frac{\partial}{\partial \theta}l_{ce}\left( \theta ^TX,y \right) &=\frac{\partial l_{ce}\left( \theta ^TX,y \right)}{\partial \theta ^TX}\cdot \frac{\partial \theta ^TX}{\partial \theta}  
 \\  
 &=\left[ Z-E_y \right] _{B\times k}\cdot X_{B\times n}  
 \\  
 &=X^T\cdot \left[ Z-E_y \right]  
-\end{align}
+\end{align*}
 {{< /math_block >}}
 
 # Lecture 3: Manual Neural Networks
@@ -236,59 +236,59 @@ h_\theta(X) =Z_{L+1}\\
 {{< /math_block >}}
 对于$W_2$的梯度，其与Lecture 2的计算类似：
 {{< math_block >}}
-\begin{align}  
+\begin{align*}  
 \frac{\partial l_{ce}(\sigma(XW_1)W_2,y)}{\partial W_2}&=\frac{\partial l_{ce}(\sigma(XW_1)W_2,y)}{\partial \sigma(XW_1)W_2} \cdot \frac{\partial\sigma(XW_1)W_2}{\partial W_2}\\  
 &=(S-I_y)_{m\times k}\cdot \sigma(XW_1)_{m\times d}\\  
 &=\sigma(XW_1)^T\cdot (S-I_y)\\  
 &[S=\text{softmax}(\sigma(XW_1))]  
-\end{align}
+\end{align*}
 {{< /math_block >}}
 
 对于$W_1$的梯度，其需要多次应用链式法则，但并不难计算：
 {{< math_block >}}
-\begin{align}  
+\begin{align*}  
 \frac{\partial l_{ce}(\sigma(XW_1)W_2,y)}{\partial W_1}&=\frac{\partial l_{ce}(\sigma(XW_1)W_2,y)}{\partial \sigma(XW_1)W_2} \cdot \frac{\partial\sigma(XW_1)W_2}{\partial \sigma(XW_1)}\cdot \frac{\partial \sigma(XW_1)}{\partial XW_1}\cdot\frac{\partial XW_1}{\partial X_1}\\  
 &=(S-I_y)_{m\times k}\cdot [W_2]_{d\times k}\cdot \sigma\prime(XW_1)_{m\times d}\cdot X_{m\times n}\\  
 &=X^T\cdot [\sigma\prime(XW_1)\odot((S-I_y)\cdot W_2^T)]\\  
 &[S=\text{softmax}(\sigma(XW_1))]  
-\end{align}
+\end{align*}
 {{< /math_block >}}
 以上公式中$\odot$表示逐元素乘法。至于为啥这么算，俺也不知道。
 
 接下来将其推广到一般情况，即$L$层的MLP中对$W_i$求导：
 {{< math_block >}}
-\begin{align}  
+\begin{align*}  
 \frac{\partial l(Z_{l+1},y)}{\partial W_i} &=\frac{\partial l}{\partial Z_{l+1}}\cdot \frac{\partial Z_{l+1}}{\partial Z_{l}}\cdot...\cdot \frac{\partial Z_{i+2}}{\partial Z_{i+1}}\cdot\frac{\partial Z_{i+1}}{\partial W_{i}}\\  
 &=G_{i+1}\cdot\frac{\partial Z_{i+1}}{\partial W_{i}}=\frac{\partial l}{\partial Z_{i+1}}\cdot \frac{\partial Z_{i+1}}{W_i}\\
 
-\end{align}
+\end{align*}
 {{< /math_block >}}
 
 由上述公式，我们可以得到一个反向迭代计算的$G_i$，即：
 {{< math_block >}}
-\begin{align}  
+\begin{align*}  
 G_i &= G_{i+1}\cdot \frac{Z_{i+1}}{Z_i} \\  
 &=G_{i+1}\cdot \frac{\partial \sigma(Z_iW_i)}{\partial Z_iW_i}\cdot\frac{\partial Z_iW_i}{Z_i}\\  
 &=G_{i+1}\cdot \sigma\prime(Z_iW_i)\cdot W_i\\  
-\end{align}
+\end{align*}
 {{< /math_block >}}
 
 上面的计算都是将矩阵当作标量进行的，接下来我们考虑其维度。已知，$Z_i \in R^{m\times n_i}$是第$i$层的输入，$G_i = \frac{\partial l}{\partial Z_{i}}$，其维度如何呢？$G_i$每个元素表示损失函数$l$对第$i$层输入的每一项求偏导，也可以记作是$l$对$Z_i$求梯度，即$\nabla_{Z_i} l$，其维度显然是$m\times n_i$，继续计算前文$G_i$：
 {{< math_block >}}
-\begin{align}  
+\begin{align*}  
 G_i &=[G_{i+1}]_{m\times n_{i+1}}\cdot \sigma\prime(Z_iW_i)_{m\times n_{i+1}}\cdot [W_i]_{n_i\times n_{i+1}}\\  
 &= [G_{i+1}\odot \sigma\prime(Z_iW_i)]W_i^T  
-\end{align}
+\end{align*}
 {{< /math_block >}}
 
 有了$G_i$，就可以继续计算$l$对$W_i$的偏导数了：
 {{< math_block >}}
-\begin{align}  
+\begin{align*}  
 \frac{\partial l(Z_{l+1},y)}{\partial W_i} &=G_{i+1}\cdot\frac{\partial Z_{i+1}}{\partial W_{i}} \\  
 &=G_{i+1}\cdot \frac{\partial\sigma(Z_iW_i)}{\partial Z_iW_i}\cdot\frac{\partial Z_iW_i}{\partial W_i}\\  
 &=[G_{i+1}]_{m\times n_{i+1}}\cdot \sigma\prime(Z_iW_i)_{m\times n_{i+1}}\cdot [Z_i]_{m\times n_i}\\  
 &=Z_i^T\cdot[G_{i+1}\odot\sigma\prime(Z_iW_i)]  
-\end{align}
+\end{align*}
 {{< /math_block >}}
 
 至此，每个小组件都已制造完毕，让我们来把它装起来吧！
@@ -325,10 +325,10 @@ G_i &=[G_{i+1}]_{m\times n_{i+1}}\cdot \sigma\prime(Z_iW_i)_{m\times n_{i+1}}\cd
 {{< /math_block >}}
 这里并不是直接使用第一项的公式，即分子不是$f(\theta + \epsilon e_i) - f(\theta)$，并且误差项是$\epsilon^2$，这是由于泰勒展开：
 {{< math_block >}}
-\begin{align}  
+\begin{align*}  
 f(\theta+\delta) = f(\theta)+f^\prime (\theta)\delta+\frac{1}{2}f^{\prime \prime}(\theta)\delta^2+o(\delta^3)\\  
 f(\theta-\delta) = f(\theta)+f^\prime (\theta)\delta-\frac{1}{2}f^{\prime \prime}(\theta)\delta^2+o(\delta^3)  
-\end{align}
+\end{align*}
 {{< /math_block >}}
 上述两式作差，即可得到数值计算$f^\prime(\theta)$的方法。
 
@@ -341,11 +341,11 @@ f(\theta-\delta) = f(\theta)+f^\prime (\theta)\delta-\frac{1}{2}f^{\prime \prime
 - 符号微分
 符号微分，就是根据微分的计算规则使用符号手动计算微分。部分规则为：
 {{< math_block >}}
-\begin{align}  
+\begin{align*}  
 &\frac{\partial (f(\theta) + g(\theta))}{\partial \theta} = \frac{\partial f(\theta)}{\partial \theta} + \frac{\partial g(\theta)}{\partial \theta}\\  
 &\frac{\partial (f(\theta) g(\theta))}{\partial \theta} = g(\theta) \frac{\partial f(\theta)}{\partial \theta} + f(\theta) \frac{\partial g(\theta)}{\partial \theta}\\  
 &\frac{\partial f(g(\theta))}{\partial\theta}=\frac{\partial f(g(\theta))}{\partial g(\theta)}\frac{\partial g(\theta)}{\partial\theta}  
-\end{align}
+\end{align*}
 {{< /math_block >}}
 根据该公式，可以计算得到$f(\theta) = \prod_{i=1}^{n} \theta_i$的梯度表达式为：$\frac{\partial f(\theta)}{\partial \theta_k} = \prod_{j \neq k}^{n} \theta_j$。如果我们根据该公式来计算梯度，会发现需要计算$n(n-2)$次乘法才能得到结果。这是因为在符号运算的过程中，我们忽略了可以反复利用的中间结果。
 
@@ -356,7 +356,7 @@ f(\theta-\delta) = f(\theta)+f^\prime (\theta)\delta-\frac{1}{2}f^{\prime \prime
 
 整个梯度计算过程如下，在此过程中应用到了具体函数的求导公式：
 {{< math_block >}}
-\begin{aligned}  
+\begin{align*ed}  
 &\dot\nu_{1} =1 \\  
 &\dot\nu_{2} =0 \\  
 &\dot{\nu}_{3} =v_{1}/v_{1}=0.5 \\  
@@ -364,7 +364,7 @@ f(\theta-\delta) = f(\theta)+f^\prime (\theta)\delta-\frac{1}{2}f^{\prime \prime
 &\dot\nu_{5} =\dot{v_{2}}\cos v_{2}=0\times\cos5=0 \\  
 &\dot{\nu}_{6} =v_{3}+v_{4}=0.5+5=5.5 \\  
 &\dot{\nu}_{7} =\dot{v_{6}}-\dot{v_{5}}=5.5-0=5.5  
-\end{aligned}
+\end{align*ed}
 {{< /math_block >}}
 
 对于$f:\mathbb{R}^n \to \mathbb{R}^k$，前向传播需要$n$次前向计算才能得到关于每个输入的梯度，这就意味前向传播适合$n$比较小、$k$比较大的情况。但是在深度学习中，通常$n$比较大、$k$比较小。
@@ -373,7 +373,7 @@ f(\theta-\delta) = f(\theta)+f^\prime (\theta)\delta-\frac{1}{2}f^{\prime \prime
 定义$\text{adjoint}:\overline{v_i}=\frac{\partial y}{\partial v_i}$,其表示
 整个计算过程如下所示，需要注意的是$\overline{v_2}$的计算过程，其在计算图上延伸出了两个节点，因此梯度也由两部分相加：
 {{< math_block >}}
-\begin{align}  
+\begin{align*}  
 &\overline{v_{7}}=\frac{\partial y}{\partial v_{7}}=1\\  
 &\overline{v_{6}}=\overline{v_{7}}\frac{\partial v_{7}}{\partial v_{6}}=\overline{v_{7}}\times1=1\\  
 &\overline{v_{5}}=\overline{v_{7}}\frac{\partial v_{7}}{\partial v_{5}}=\overline{v_{7}}\times(-1)=-1\\  
@@ -382,7 +382,7 @@ f(\theta-\delta) = f(\theta)+f^\prime (\theta)\delta-\frac{1}{2}f^{\prime \prime
 &\overline{v_{2}}=\overline{v_{5}}\frac{\partial v_{5}}{\partial v_{2}}+\overline{v_{4}}\frac{\partial v_{4}}{\partial v_{2}}=\overline{v_{5}}\times\cos v_{2}+\overline{v_{4}}\times v_{1}\\  
 &\overline{v_{1}}=\overline{v_{4}} \frac{\partial v_{4}}{\partial v_{1}}+\overline{v_{3}} \frac{\partial v_{3}}{\partial v_{1}}=\overline{v_{4}}\times v_{2}+ \overline{v_{3}} \frac{1}{v_{1}}=5+\frac{1}{2}=5.5
 
-\end{align}
+\end{align*}
 {{< /math_block >}}
 
 接下来我们讨论一下为什么前文中$\overline{v_2}$由两部分组成。考虑如下一个计算图：
@@ -437,7 +437,7 @@ $y$可以被视作关于$v_2$和$v_3$的函数，即$y = f(v_2, v_3)$，那么�
 {{< /math_block >}}
 鉴于
 {{< math_block >}}
-\begin{aligned}Z_{ij}&=\sum_kX_{ik}W_{kj}\\v&=f(Z)\end{aligned}
+\begin{align*ed}Z_{ij}&=\sum_kX_{ik}W_{kj}\\v&=f(Z)\end{align*ed}
 {{< /math_block >}}
 那么在计算$\overline{X_{i,k}}$时，需要将所有计算图上以$X_{i,k}$为输入的节点都找出来，即$Z$的第$i$行的每个元素。因此$\overline{X_{i,k}}$的计算公式为：
 {{< math_block >}}

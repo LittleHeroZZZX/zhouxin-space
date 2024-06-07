@@ -68,37 +68,23 @@ math: "true"
 
 <div>$$
 X\in R^{m\times n}=\left[ \begin{array}{c}
-	x^{(1)T}\\
-	\vdots\\
-	x^{\left( m \right) T}\\
-\end{array} \right] ,  y\in \left\{ 1,...,k \right\} ^m=\left[ \begin{array}{c}
-	y^{\left( 1 \right)}\\
-	\vdots\\
-	y^{\left( m \right)}\\
-\end{array} \right]
+	x^{(1)T}\\	\vdots\\	x^{\left( m \right) T}\\\end{array} \right] ,  y\in \left\{ 1,...,k \right\} ^m=\left[ \begin{array}{c}
+	y^{\left( 1 \right)}\\	\vdots\\	y^{\left( m \right)}\\\end{array} \right]
 $$</div>
 
 数据集的矩阵是一个个样本转置后堆叠 stack 起来的。那么输出可以表示为：
 
 <div>$$
 h_{\theta}\left( X \right) =\left[ \begin{array}{c}
-	h_{\theta}\left( x^{\left( 1 \right)} \right) ^T\\
-	\vdots\\
-	h_{\theta}\left( x^{\left( m \right)} \right) ^T\\
-\end{array} \right] =\left[ \begin{array}{c}
-	x^{\left( 1 \right) T}\theta\\
-	\vdots\\
-	x^{\left( m \right) T}\theta\\
-\end{array} \right] =X\theta
+	h_{\theta}\left( x^{\left( 1 \right)} \right) ^T\\	\vdots\\	h_{\theta}\left( x^{\left( m \right)} \right) ^T\\\end{array} \right] =\left[ \begin{array}{c}
+	x^{\left( 1 \right) T}\theta\\	\vdots\\	x^{\left( m \right) T}\theta\\\end{array} \right] =X\theta
 $$</div>
 
 关于损失函数 $l_{err}$，一种朴素的想法是将模型预测错误的模型数据量作为损失函数，即如果模型预测的正确率最高的那个类别与真实类别不相同，则损失函数为 1，否则为 0：
 
 <div>$$
 l_{err}\left( h\left( x \right) , y \right) \,\,=\,\,\left\{ \begin{aligned}
-	0 \ &\mathrm{if} \ \mathrm{argmax} _i\,\,h_i\left( x \right) =y\\
-	1 \ &\mathrm{otherwise}\\
-\end{aligned} \right.
+	0 \ &\mathrm{if} \ \mathrm{argmax} _i\,\,h_i\left( x \right) =y\\	1 \ &\mathrm{otherwise}\\\end{aligned} \right.
 $$</div>
 
 遗憾的是，这个符合直觉函数是不可微分的，难以对参数进行优化。更合适的做法是使用交叉熵损失函数。
@@ -253,7 +239,6 @@ $$</div>
 \begin{align}  
 \frac{\partial l(Z_{l+1},y)}{\partial W_i} &=\frac{\partial l}{\partial Z_{l+1}}\cdot \frac{\partial Z_{l+1}}{\partial Z_{l}}\cdot...\cdot \frac{\partial Z_{i+2}}{\partial Z_{i+1}}\cdot\frac{\partial Z_{i+1}}{\partial W_{i}}\\  
 &=G_{i+1}\cdot\frac{\partial Z_{i+1}}{\partial W_{i}}=\frac{\partial l}{\partial Z_{i+1}}\cdot \frac{\partial Z_{i+1}}{W_i}\\
-
 \end{align}
 $$</div>
 

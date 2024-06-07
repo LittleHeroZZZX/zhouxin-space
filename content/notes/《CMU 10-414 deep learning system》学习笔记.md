@@ -4,7 +4,7 @@ tags:
   - CUDA
   - 深度学习系统
 date: 2024-05-28T12:24:00+08:00
-lastmod: 2024-06-07T18:27:00+08:00
+lastmod: 2024-06-07T18:34:00+08:00
 publish: true
 dir: notes
 slug: notes on cmu 10-414 deep learning system
@@ -25,13 +25,13 @@ math: "true"
 
 除了使用这些库，我们为什么还要学习深度学习系统？
 
-- 为了构建深度学习系统\
+- 为了构建深度学习系统  
 如果想要从事深度学习系统的开发，那毫无疑问得先学习它。目前深度学习框架并没完全成熟，还有很多开发新功能，乃至新的框架的机会。
 
-- 为了能够更高效地使用现有系统\
+- 为了能够更高效地使用现有系统  
 了解现有系统的内部实现，可以帮助我们写出更加高效的深度学习代码。如果想要提高自定义算子的效率，那必须先了解相关操作是如何实现的。
 
-- 深度学习系统本身就很有趣\
+- 深度学习系统本身就很有趣  
 尽管这个系统看上去很复杂，但是其核心算法的原理确实相当简单的。两千行左右的代码，就可以写出一个深度学习库。
 
 ## 预备知识
@@ -68,23 +68,37 @@ math: "true"
 
 <div>$$
 X\in R^{m\times n}=\left[ \begin{array}{c}
-	x^{(1)T}\\	\vdots\\	x^{\left( m \right) T}\\\end{array} \right] ,  y\in \left\{ 1,...,k \right\} ^m=\left[ \begin{array}{c}
-	y^{\left( 1 \right)}\\	\vdots\\	y^{\left( m \right)}\\\end{array} \right]
+	x^{(1)T}\\
+	\vdots\\
+	x^{\left( m \right) T}\\
+\end{array} \right] ,  y\in \left\{ 1,...,k \right\} ^m=\left[ \begin{array}{c}
+	y^{\left( 1 \right)}\\
+	\vdots\\
+	y^{\left( m \right)}\\
+\end{array} \right]
 $$</div>
 
 数据集的矩阵是一个个样本转置后堆叠 stack 起来的。那么输出可以表示为：
 
 <div>$$
 h_{\theta}\left( X \right) =\left[ \begin{array}{c}
-	h_{\theta}\left( x^{\left( 1 \right)} \right) ^T\\	\vdots\\	h_{\theta}\left( x^{\left( m \right)} \right) ^T\\\end{array} \right] =\left[ \begin{array}{c}
-	x^{\left( 1 \right) T}\theta\\	\vdots\\	x^{\left( m \right) T}\theta\\\end{array} \right] =X\theta
+	h_{\theta}\left( x^{\left( 1 \right)} \right) ^T\\
+	\vdots\\
+	h_{\theta}\left( x^{\left( m \right)} \right) ^T\\
+\end{array} \right] =\left[ \begin{array}{c}
+	x^{\left( 1 \right) T}\theta\\
+	\vdots\\
+	x^{\left( m \right) T}\theta\\
+\end{array} \right] =X\theta
 $$</div>
 
 关于损失函数 $l_{err}$，一种朴素的想法是将模型预测错误的模型数据量作为损失函数，即如果模型预测的正确率最高的那个类别与真实类别不相同，则损失函数为 1，否则为 0：
 
 <div>$$
 l_{err}\left( h\left( x \right) , y \right) \,\,=\,\,\left\{ \begin{aligned}
-	0 \ &\mathrm{if} \ \mathrm{argmax} _i\,\,h_i\left( x \right) =y\\	1 \ &\mathrm{otherwise}\\\end{aligned} \right.
+	0 \ &\mathrm{if} \ \mathrm{argmax} _i\,\,h_i\left( x \right) =y\\
+	1 \ &\mathrm{otherwise}\\
+\end{aligned} \right.
 $$</div>
 
 遗憾的是，这个符合直觉函数是不可微分的，难以对参数进行优化。更合适的做法是使用交叉熵损失函数。
@@ -104,15 +118,14 @@ $$</div>
 注意在计算交叉熵时，通过运算进行了化简，这使得我们可以省去计算 softmax 的过程，直接计算最终的结果。不但如此，交叉熵的计算中，如果 $h_i(x)$ 的值很小，那么取对数会出现很大的值，化简后的计算则避免了这种情况。
 
 所有的深度学习问题，都可以归结为一下这个最优化问题：<div>$$
-\
 \mathop {\mathrm{minimize}} \limits_{\theta}\ \ \frac{1}{m}\sum_{i=1}^m{l(h_{\theta}(x^{(i)}),y^{(i)}))}
 $$</div>
 我们使用梯度下降法对该问题进行优化。在此之前，首先介绍一下关于梯度。我们的优化目标可以看作一个关于$\theta \in R^{n\times k}$的函数$f$，那么其在$\theta_0$处的梯度可以表示为：
 <div>$$
-\nabla _{\theta}f\left( \theta _0 \right) \in R^{n\times k}=\left[ \begin{matrix}\
-	\frac{\partial f\left( \theta _0 \right)}{\partial \theta _{11}}&		\cdots&		\frac{\partial f\left( \theta _0 \right)}{\partial \theta _{k1}}\\\
-	\vdots&		\ddots&		\vdots\\\
-	\frac{\partial f\left( \theta _0 \right)}{\partial \theta _{n1}}&		\cdots&		\frac{\partial f\left( \theta _0 \right)}{\partial \theta _{nk}}\\\
+\nabla _{\theta}f\left( \theta _0 \right) \in R^{n\times k}=\left[ \begin{matrix}  
+	\frac{\partial f\left( \theta _0 \right)}{\partial \theta _{11}}&		\cdots&		\frac{\partial f\left( \theta _0 \right)}{\partial \theta _{k1}}\\  
+	\vdots&		\ddots&		\vdots\\  
+	\frac{\partial f\left( \theta _0 \right)}{\partial \theta _{n1}}&		\cdots&		\frac{\partial f\left( \theta _0 \right)}{\partial \theta _{nk}}\\  
 \end{matrix} \right]
 $$</div>
 其中，第$i$行第$j$个元素表示除$\theta_{ij}$之外的参数都被当作常数，对$\theta_{ij}$求偏导。
@@ -133,14 +146,14 @@ $$</div>
 
 那如何计算梯度表达式呢？梯度矩阵中每个元素都是一个偏导数，我们就先从计算偏导数开始。假设$h$是个向量，我们来计算偏导数$\frac{\partial l_{ce}\left( h,y \right)}{\partial h_i}$：
 <div>$$
-\begin{align}\
-\frac{\partial l_{ce}\left( h,y \right)}{\partial h_i}&=\frac{\partial}{\partial h_i}\left( -h_y+\log \sum_{j=1}^k{\exp h_j} \right)\
-\\\
-&=-1\left\{ i=y \right\} +\frac{\exp \left( h_j \right)}{\sum_{j=1}^k{\exp h_j}}\
-\\\
-&=-1\left\{ i=y \right\} +\mathrm{softmax} \left( h \right)\
-\\\
-&=z-e_y\
+\begin{align}  
+\frac{\partial l_{ce}\left( h,y \right)}{\partial h_i}&=\frac{\partial}{\partial h_i}\left( -h_y+\log \sum_{j=1}^k{\exp h_j} \right)  
+\\  
+&=-1\left\{ i=y \right\} +\frac{\exp \left( h_j \right)}{\sum_{j=1}^k{\exp h_j}}  
+\\  
+&=-1\left\{ i=y \right\} +\mathrm{softmax} \left( h \right)  
+\\  
+&=z-e_y  
 \end{align}
 $$</div>
 
@@ -158,24 +171,24 @@ $$</div>
 
 按照第二个方法的逻辑，过程为：
 <div>$$
-\begin{align}\
-\frac{\partial}{\partial \theta}l_{ce}\left( \theta ^Tx,y \right) &=\frac{\partial l_{ce}\left( \theta ^Tx,y \right)}{\partial \theta ^Tx}\cdot \frac{\partial \theta ^Tx}{\partial \theta}\
-\\\
-&=\left[ z-e_y \right] _{k\times 1}\cdot x_{n\times 1}\
-\\\
-&=x\cdot \left[ z-e_y \right]\
+\begin{align}  
+\frac{\partial}{\partial \theta}l_{ce}\left( \theta ^Tx,y \right) &=\frac{\partial l_{ce}\left( \theta ^Tx,y \right)}{\partial \theta ^Tx}\cdot \frac{\partial \theta ^Tx}{\partial \theta}  
+\\  
+&=\left[ z-e_y \right] _{k\times 1}\cdot x_{n\times 1}  
+\\  
+&=x\cdot \left[ z-e_y \right]  
 \end{align}
 $$</div>
 其中，$z=\text{softmax}(\theta^Tx)$。注意，倒数第二步求出的结果是两个列向量相乘，不能运算。又已知结果应该是$n\times k$的矩阵，调整向量之间的顺序即可。
 
 照猫画虎，可以写出batch的情况，$X\in R^{B\times n}$：
 <div>$$
-\begin{align}\
-\frac{\partial}{\partial \theta}l_{ce}\left( \theta ^TX,y \right) &=\frac{\partial l_{ce}\left( \theta ^TX,y \right)}{\partial \theta ^TX}\cdot \frac{\partial \theta ^TX}{\partial \theta}\
-\\\
-&=\left[ Z-E_y \right] _{B\times k}\cdot X_{B\times n}\
-\\\
-&=X^T\cdot \left[ Z-E_y \right]\
+\begin{align}  
+\frac{\partial}{\partial \theta}l_{ce}\left( \theta ^TX,y \right) &=\frac{\partial l_{ce}\left( \theta ^TX,y \right)}{\partial \theta ^TX}\cdot \frac{\partial \theta ^TX}{\partial \theta}  
+\\  
+&=\left[ Z-E_y \right] _{B\times k}\cdot X_{B\times n}  
+\\  
+&=X^T\cdot \left[ Z-E_y \right]  
 \end{align}
 $$</div>
 
@@ -202,11 +215,11 @@ h_\theta(X) = \sigma(XW_1)W_2
 $$</div>
 接下来给出L层多层感知机（a.k.a. MLP、前馈神经网络、全连接层）的形式化表达：
 <div>$$
-\left\{\begin{array}{l}\
-Z_{i+1} = \sigma_i(Z_iW_i), i=1,...,L  \\\
-Z_1 = X\\\
-h_\theta(X) =Z_{L+1}\\\
-[Z_i\in R^{m\times n_i}, W_i \in R^{n_i\times n_{i+1}}]\\\
+\left\{\begin{array}{l}  
+Z_{i+1} = \sigma_i(Z_iW_i), i=1,...,L  \\  
+Z_1 = X\\  
+h_\theta(X) =Z_{L+1}\\  
+[Z_i\in R^{m\times n_i}, W_i \in R^{n_i\times n_{i+1}}]\\  
 \sigma_i:R\rightarrow R
 
 \end{array} \right.
@@ -223,57 +236,58 @@ $$</div>
 $$</div>
 对于$W_2$的梯度，其与Lecture 2的计算类似：
 <div>$$
-\begin{align}\
-\frac{\partial l_{ce}(\sigma(XW_1)W_2,y)}{\partial W_2}&=\frac{\partial l_{ce}(\sigma(XW_1)W_2,y)}{\partial \sigma(XW_1)W_2} \cdot \frac{\partial\sigma(XW_1)W_2}{\partial W_2}\\\
-&=(S-I_y)_{m\times k}\cdot \sigma(XW_1)_{m\times d}\\\
-&=\sigma(XW_1)^T\cdot (S-I_y)\\\
-&[S=\text{softmax}(\sigma(XW_1))]\
+\begin{align}  
+\frac{\partial l_{ce}(\sigma(XW_1)W_2,y)}{\partial W_2}&=\frac{\partial l_{ce}(\sigma(XW_1)W_2,y)}{\partial \sigma(XW_1)W_2} \cdot \frac{\partial\sigma(XW_1)W_2}{\partial W_2}\\  
+&=(S-I_y)_{m\times k}\cdot \sigma(XW_1)_{m\times d}\\  
+&=\sigma(XW_1)^T\cdot (S-I_y)\\  
+&[S=\text{softmax}(\sigma(XW_1))]  
 \end{align}
 $$</div>
 
 对于$W_1$的梯度，其需要多次应用链式法则，但并不难计算：
 <div>$$
-\begin{align}\
-\frac{\partial l_{ce}(\sigma(XW_1)W_2,y)}{\partial W_1}&=\frac{\partial l_{ce}(\sigma(XW_1)W_2,y)}{\partial \sigma(XW_1)W_2} \cdot \frac{\partial\sigma(XW_1)W_2}{\partial \sigma(XW_1)}\cdot \frac{\partial \sigma(XW_1)}{\partial XW_1}\cdot\frac{\partial XW_1}{\partial X_1}\\\
-&=(S-I_y)_{m\times k}\cdot [W_2]_{d\times k}\cdot \sigma\prime(XW_1)_{m\times d}\cdot X_{m\times n}\\\
-&=X^T\cdot [\sigma\prime(XW_1)\odot((S-I_y)\cdot W_2^T)]\\\
-&[S=\text{softmax}(\sigma(XW_1))]\
+\begin{align}  
+\frac{\partial l_{ce}(\sigma(XW_1)W_2,y)}{\partial W_1}&=\frac{\partial l_{ce}(\sigma(XW_1)W_2,y)}{\partial \sigma(XW_1)W_2} \cdot \frac{\partial\sigma(XW_1)W_2}{\partial \sigma(XW_1)}\cdot \frac{\partial \sigma(XW_1)}{\partial XW_1}\cdot\frac{\partial XW_1}{\partial X_1}\\  
+&=(S-I_y)_{m\times k}\cdot [W_2]_{d\times k}\cdot \sigma\prime(XW_1)_{m\times d}\cdot X_{m\times n}\\  
+&=X^T\cdot [\sigma\prime(XW_1)\odot((S-I_y)\cdot W_2^T)]\\  
+&[S=\text{softmax}(\sigma(XW_1))]  
 \end{align}
 $$</div>
 以上公式中$\odot$表示逐元素乘法。至于为啥这么算，俺也不知道。
 
 接下来将其推广到一般情况，即$L$层的MLP中对$W_i$求导：
 <div>$$
-\begin{align}\
-\frac{\partial l(Z_{l+1},y)}{\partial W_i} &=\frac{\partial l}{\partial Z_{l+1}}\cdot \frac{\partial Z_{l+1}}{\partial Z_{l}}\cdot...\cdot \frac{\partial Z_{i+2}}{\partial Z_{i+1}}\cdot\frac{\partial Z_{i+1}}{\partial W_{i}}\\\
+\begin{align}  
+\frac{\partial l(Z_{l+1},y)}{\partial W_i} &=\frac{\partial l}{\partial Z_{l+1}}\cdot \frac{\partial Z_{l+1}}{\partial Z_{l}}\cdot...\cdot \frac{\partial Z_{i+2}}{\partial Z_{i+1}}\cdot\frac{\partial Z_{i+1}}{\partial W_{i}}\\  
 &=G_{i+1}\cdot\frac{\partial Z_{i+1}}{\partial W_{i}}=\frac{\partial l}{\partial Z_{i+1}}\cdot \frac{\partial Z_{i+1}}{W_i}\\
+
 \end{align}
 $$</div>
 
 由上述公式，我们可以得到一个反向迭代计算的$G_i$，即：
 <div>$$
-\begin{align}\
-G_i &= G_{i+1}\cdot \frac{Z_{i+1}}{Z_i} \\\
-&=G_{i+1}\cdot \frac{\partial \sigma(Z_iW_i)}{\partial Z_iW_i}\cdot\frac{\partial Z_iW_i}{Z_i}\\\
-&=G_{i+1}\cdot \sigma\prime(Z_iW_i)\cdot W_i\\\
+\begin{align}  
+G_i &= G_{i+1}\cdot \frac{Z_{i+1}}{Z_i} \\  
+&=G_{i+1}\cdot \frac{\partial \sigma(Z_iW_i)}{\partial Z_iW_i}\cdot\frac{\partial Z_iW_i}{Z_i}\\  
+&=G_{i+1}\cdot \sigma\prime(Z_iW_i)\cdot W_i\\  
 \end{align}
 $$</div>
 
 上面的计算都是将矩阵当作标量进行的，接下来我们考虑其维度。已知，$Z_i \in R^{m\times n_i}$是第$i$层的输入，$G_i = \frac{\partial l}{\partial Z_{i}}$，其维度如何呢？$G_i$每个元素表示损失函数$l$对第$i$层输入的每一项求偏导，也可以记作是$l$对$Z_i$求梯度，即$\nabla_{Z_i} l$，其维度显然是$m\times n_i$，继续计算前文$G_i$：
 <div>$$
-\begin{align}\
-G_i &=[G_{i+1}]_{m\times n_{i+1}}\cdot \sigma\prime(Z_iW_i)_{m\times n_{i+1}}\cdot [W_i]_{n_i\times n_{i+1}}\\\
-&= [G_{i+1}\odot \sigma\prime(Z_iW_i)]W_i^T\
+\begin{align}  
+G_i &=[G_{i+1}]_{m\times n_{i+1}}\cdot \sigma\prime(Z_iW_i)_{m\times n_{i+1}}\cdot [W_i]_{n_i\times n_{i+1}}\\  
+&= [G_{i+1}\odot \sigma\prime(Z_iW_i)]W_i^T  
 \end{align}
 $$</div>
 
 有了$G_i$，就可以继续计算$l$对$W_i$的偏导数了：
 <div>$$
-\begin{align}\
-\frac{\partial l(Z_{l+1},y)}{\partial W_i} &=G_{i+1}\cdot\frac{\partial Z_{i+1}}{\partial W_{i}} \\\
-&=G_{i+1}\cdot \frac{\partial\sigma(Z_iW_i)}{\partial Z_iW_i}\cdot\frac{\partial Z_iW_i}{\partial W_i}\\\
-&=[G_{i+1}]_{m\times n_{i+1}}\cdot \sigma\prime(Z_iW_i)_{m\times n_{i+1}}\cdot [Z_i]_{m\times n_i}\\\
-&=Z_i^T\cdot[G_{i+1}\odot\sigma\prime(Z_iW_i)]\
+\begin{align}  
+\frac{\partial l(Z_{l+1},y)}{\partial W_i} &=G_{i+1}\cdot\frac{\partial Z_{i+1}}{\partial W_{i}} \\  
+&=G_{i+1}\cdot \frac{\partial\sigma(Z_iW_i)}{\partial Z_iW_i}\cdot\frac{\partial Z_iW_i}{\partial W_i}\\  
+&=[G_{i+1}]_{m\times n_{i+1}}\cdot \sigma\prime(Z_iW_i)_{m\times n_{i+1}}\cdot [Z_i]_{m\times n_i}\\  
+&=Z_i^T\cdot[G_{i+1}\odot\sigma\prime(Z_iW_i)]  
 \end{align}
 $$</div>
 
@@ -297,7 +311,7 @@ $$</div>
 ## 对自动微分方法的简单介绍
 深度学习中，一个核心内容就是计算梯度。这里介绍集中计算梯度的方案：
 - 偏导数定义
-
+- 
 梯度是由一个个偏导数组成的，可以直接根据偏导数的定义来计算梯度：
 <div>$$
 \frac{\partial f(\theta)}{\partial \theta_i} = \lim_{\epsilon \to 0}\frac{f(\theta + \epsilon e_i) - f(\theta)}{\epsilon}
@@ -311,9 +325,9 @@ $$</div>
 $$</div>
 这里并不是直接使用第一项的公式，即分子不是$f(\theta + \epsilon e_i) - f(\theta)$，并且误差项是$\epsilon^2$，这是由于泰勒展开：
 <div>$$
-\begin{align}\
-f(\theta+\delta) = f(\theta)+f^\prime (\theta)\delta+\frac{1}{2}f^{\prime \prime}(\theta)\delta^2+o(\delta^3)\\\
-f(\theta-\delta) = f(\theta)+f^\prime (\theta)\delta-\frac{1}{2}f^{\prime \prime}(\theta)\delta^2+o(\delta^3)\
+\begin{align}  
+f(\theta+\delta) = f(\theta)+f^\prime (\theta)\delta+\frac{1}{2}f^{\prime \prime}(\theta)\delta^2+o(\delta^3)\\  
+f(\theta-\delta) = f(\theta)+f^\prime (\theta)\delta-\frac{1}{2}f^{\prime \prime}(\theta)\delta^2+o(\delta^3)  
 \end{align}
 $$</div>
 上述两式作差，即可得到数值计算$f^\prime(\theta)$的方法。
@@ -327,10 +341,10 @@ $$</div>
 - 符号微分
 符号微分，就是根据微分的计算规则使用符号手动计算微分。部分规则为：
 <div>$$
-\begin{align}\
-&\frac{\partial (f(\theta) + g(\theta))}{\partial \theta} = \frac{\partial f(\theta)}{\partial \theta} + \frac{\partial g(\theta)}{\partial \theta}\\\
-&\frac{\partial (f(\theta) g(\theta))}{\partial \theta} = g(\theta) \frac{\partial f(\theta)}{\partial \theta} + f(\theta) \frac{\partial g(\theta)}{\partial \theta}\\\
-&\frac{\partial f(g(\theta))}{\partial\theta}=\frac{\partial f(g(\theta))}{\partial g(\theta)}\frac{\partial g(\theta)}{\partial\theta}\
+\begin{align}  
+&\frac{\partial (f(\theta) + g(\theta))}{\partial \theta} = \frac{\partial f(\theta)}{\partial \theta} + \frac{\partial g(\theta)}{\partial \theta}\\  
+&\frac{\partial (f(\theta) g(\theta))}{\partial \theta} = g(\theta) \frac{\partial f(\theta)}{\partial \theta} + f(\theta) \frac{\partial g(\theta)}{\partial \theta}\\  
+&\frac{\partial f(g(\theta))}{\partial\theta}=\frac{\partial f(g(\theta))}{\partial g(\theta)}\frac{\partial g(\theta)}{\partial\theta}  
 \end{align}
 $$</div>
 根据该公式，可以计算得到$f(\theta) = \prod_{i=1}^{n} \theta_i$的梯度表达式为：$\frac{\partial f(\theta)}{\partial \theta_k} = \prod_{j \neq k}^{n} \theta_j$。如果我们根据该公式来计算梯度，会发现需要计算$n(n-2)$次乘法才能得到结果。这是因为在符号运算的过程中，我们忽略了可以反复利用的中间结果。
@@ -342,14 +356,14 @@ $$</div>
 
 整个梯度计算过程如下，在此过程中应用到了具体函数的求导公式：
 <div>$$
-\begin{aligned}\
-&\dot\nu_{1} =1 \\\
-&\dot\nu_{2} =0 \\\
-&\dot{\nu}_{3} =v_{1}/v_{1}=0.5 \\\
-&\dot{\nu}_{4} =\hat{v}_{1}v_{2}+v_{2}v_{1}=1\times5+0\times2=5 \\\
-&\dot\nu_{5} =\dot{v_{2}}\cos v_{2}=0\times\cos5=0 \\\
-&\dot{\nu}_{6} =v_{3}+v_{4}=0.5+5=5.5 \\\
-&\dot{\nu}_{7} =\dot{v_{6}}-\dot{v_{5}}=5.5-0=5.5\
+\begin{aligned}  
+&\dot\nu_{1} =1 \\  
+&\dot\nu_{2} =0 \\  
+&\dot{\nu}_{3} =v_{1}/v_{1}=0.5 \\  
+&\dot{\nu}_{4} =\hat{v}_{1}v_{2}+v_{2}v_{1}=1\times5+0\times2=5 \\  
+&\dot\nu_{5} =\dot{v_{2}}\cos v_{2}=0\times\cos5=0 \\  
+&\dot{\nu}_{6} =v_{3}+v_{4}=0.5+5=5.5 \\  
+&\dot{\nu}_{7} =\dot{v_{6}}-\dot{v_{5}}=5.5-0=5.5  
 \end{aligned}
 $$</div>
 
@@ -359,14 +373,15 @@ $$</div>
 定义$\text{adjoint}:\overline{v_i}=\frac{\partial y}{\partial v_i}$,其表示
 整个计算过程如下所示，需要注意的是$\overline{v_2}$的计算过程，其在计算图上延伸出了两个节点，因此梯度也由两部分相加：
 <div>$$
-\begin{align}\
-&\overline{v_{7}}=\frac{\partial y}{\partial v_{7}}=1\\\
-&\overline{v_{6}}=\overline{v_{7}}\frac{\partial v_{7}}{\partial v_{6}}=\overline{v_{7}}\times1=1\\\
-&\overline{v_{5}}=\overline{v_{7}}\frac{\partial v_{7}}{\partial v_{5}}=\overline{v_{7}}\times(-1)=-1\\\
-&\overline{v_{4}}=\overline{v_{6}}\frac{\partial v_{6}}{\partial v_{4}}=\overline{v_{6}}\times1=1\\\
-&\overline{v_{3}}=\overline{v_{6}}\frac{\partial v_{6}}{\partial v_{3}}=\overline{v_{6}}\times1=1\\\
-&\overline{v_{2}}=\overline{v_{5}}\frac{\partial v_{5}}{\partial v_{2}}+\overline{v_{4}}\frac{\partial v_{4}}{\partial v_{2}}=\overline{v_{5}}\times\cos v_{2}+\overline{v_{4}}\times v_{1}\\\
-&\overline{v_{1}}=\overline{v_{4}} \frac{\partial v_{4}}{\partial v_{1}}+\overline{v_{3}} \frac{\partial v_{3}}{\partial v_{1}}=\overline{v_{4}}\times v_{2}+ \overline{v_{3}} \frac{1}{v_{1}}=5+\frac{1}{2}=5.5\
+\begin{align}  
+&\overline{v_{7}}=\frac{\partial y}{\partial v_{7}}=1\\  
+&\overline{v_{6}}=\overline{v_{7}}\frac{\partial v_{7}}{\partial v_{6}}=\overline{v_{7}}\times1=1\\  
+&\overline{v_{5}}=\overline{v_{7}}\frac{\partial v_{7}}{\partial v_{5}}=\overline{v_{7}}\times(-1)=-1\\  
+&\overline{v_{4}}=\overline{v_{6}}\frac{\partial v_{6}}{\partial v_{4}}=\overline{v_{6}}\times1=1\\  
+&\overline{v_{3}}=\overline{v_{6}}\frac{\partial v_{6}}{\partial v_{3}}=\overline{v_{6}}\times1=1\\  
+&\overline{v_{2}}=\overline{v_{5}}\frac{\partial v_{5}}{\partial v_{2}}+\overline{v_{4}}\frac{\partial v_{4}}{\partial v_{2}}=\overline{v_{5}}\times\cos v_{2}+\overline{v_{4}}\times v_{1}\\  
+&\overline{v_{1}}=\overline{v_{4}} \frac{\partial v_{4}}{\partial v_{1}}+\overline{v_{3}} \frac{\partial v_{3}}{\partial v_{1}}=\overline{v_{4}}\times v_{2}+ \overline{v_{3}} \frac{1}{v_{1}}=5+\frac{1}{2}=5.5
+
 \end{align}
 $$</div>
 

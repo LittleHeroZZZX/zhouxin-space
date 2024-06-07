@@ -1,0 +1,5 @@
+{{ $math := .Inner }}
+{{ $math = $math | replaceRE "\n{2,}" "\n" }}
+<div>$$
+{{ $math }}
+$$</div>

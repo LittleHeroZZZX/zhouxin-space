@@ -4,7 +4,7 @@ tags:
   - CUDA
   - 深度学习系统
 date: 2024-05-28T12:24:00+08:00
-lastmod: 2024-06-07T18:34:00+08:00
+lastmod: 2024-06-08T09:59:00+08:00
 publish: true
 dir: notes
 slug: notes on cmu 10-414 deep learning system
@@ -95,10 +95,10 @@ h_{\theta}\left( X \right) =\left[ \begin{array}{c}
 关于损失函数 $l_{err}$，一种朴素的想法是将模型预测错误的模型数据量作为损失函数，即如果模型预测的正确率最高的那个类别与真实类别不相同，则损失函数为 1，否则为 0：
 
 {{< math_block >}}
-l_{err}\left( h\left( x \right) , y \right) \,\,=\,\,\left\{ \begin{align*ed}
+l_{err}\left( h\left( x \right) , y \right) \,\,=\,\,\left\{ \begin{align*}
 	0 \ &\mathrm{if} \ \mathrm{argmax} _i\,\,h_i\left( x \right) =y\\
 	1 \ &\mathrm{otherwise}\\
-\end{align*ed} \right.
+\end{align*} \right.
 {{< /math_block >}}
 
 遗憾的是，这个符合直觉函数是不可微分的，难以对参数进行优化。更合适的做法是使用交叉熵损失函数。
@@ -356,7 +356,7 @@ f(\theta-\delta) = f(\theta)+f^\prime (\theta)\delta-\frac{1}{2}f^{\prime \prime
 
 整个梯度计算过程如下，在此过程中应用到了具体函数的求导公式：
 {{< math_block >}}
-\begin{align*ed}  
+\begin{align*}  
 &\dot\nu_{1} =1 \\  
 &\dot\nu_{2} =0 \\  
 &\dot{\nu}_{3} =v_{1}/v_{1}=0.5 \\  
@@ -364,7 +364,7 @@ f(\theta-\delta) = f(\theta)+f^\prime (\theta)\delta-\frac{1}{2}f^{\prime \prime
 &\dot\nu_{5} =\dot{v_{2}}\cos v_{2}=0\times\cos5=0 \\  
 &\dot{\nu}_{6} =v_{3}+v_{4}=0.5+5=5.5 \\  
 &\dot{\nu}_{7} =\dot{v_{6}}-\dot{v_{5}}=5.5-0=5.5  
-\end{align*ed}
+\end{align*}
 {{< /math_block >}}
 
 对于$f:\mathbb{R}^n \to \mathbb{R}^k$，前向传播需要$n$次前向计算才能得到关于每个输入的梯度，这就意味前向传播适合$n$比较小、$k$比较大的情况。但是在深度学习中，通常$n$比较大、$k$比较小。
@@ -437,7 +437,7 @@ $y$可以被视作关于$v_2$和$v_3$的函数，即$y = f(v_2, v_3)$，那么�
 {{< /math_block >}}
 鉴于
 {{< math_block >}}
-\begin{align*ed}Z_{ij}&=\sum_kX_{ik}W_{kj}\\v&=f(Z)\end{align*ed}
+\begin{align*}Z_{ij}&=\sum_kX_{ik}W_{kj}\\v&=f(Z)\end{align*}
 {{< /math_block >}}
 那么在计算$\overline{X_{i,k}}$时，需要将所有计算图上以$X_{i,k}$为输入的节点都找出来，即$Z$的第$i$行的每个元素。因此$\overline{X_{i,k}}$的计算公式为：
 {{< math_block >}}

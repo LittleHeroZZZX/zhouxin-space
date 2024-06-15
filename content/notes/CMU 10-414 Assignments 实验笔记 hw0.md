@@ -1,11 +1,13 @@
 ---
 title: CMU 10-414 Assignments 实验笔记 hw0
-tags: 
+tags:
+  - CUDA
+  - 深度学习系统
 date: 2024-06-06T13:28:00+08:00
-lastmod: 2024-06-07T11:09:00+08:00
+lastmod: 2024-06-15T20:23:00+08:00
 publish: true
 dir: notes
-slug: notes on cmu 10-414 assignments hw0
+slug: notes on cmu 10-414 assignments
 math: "true"
 ---
 
@@ -188,4 +190,303 @@ void softmax_regression_epoch_cpp(const float *X, const unsigned char *y,
 
 hw0 理应是在 Lecture 2 课前完成的，初学者看到一堆公式应该会很懵逼，但整个 hw 比较简单，照着公式一步步走就能完成（除了双层感知机中奇怪的精度错误），主要还是用来熟悉 NumPy 和基本的 DL 模型。
 
+# hw1
+
+第一个 homework 共有六个小问：正向计算、反向梯度、拓扑排序反向模式自动微分、softmax 损失、双层感知机的 SGD 算法。
+
+## Implementing forward & backward computation
+
+前两个小问就放在一起讨论了。第一问是通过 NumPy 的 API 实现一些常用的算子，第二问则是通过第一问的算子实现常用算子的梯度实现。
+
+需要注意的是，notebook 中强调了第一问操作的对象是 `NDArray`，第二问是 `Tensor`。前者模拟的事这些算子的低层实现，后者则是通过调用这个算子来实现梯度计算，或者说是将梯度计算封装为另一个算子，这样就可以求梯度看作一个普通运算，进而自动求出梯度的梯度。详细解释请看 Lecture 4。
+
+- PowerScaler  
+这个算子作用是对张量逐元素求幂。幂指数作为不可学习的参数，在算子实例化时就固定了，因此不用考虑对幂指数的偏导数。这个很简单，应用幂函数的求导公式即可：
+
+```python
+class PowerScalar(TensorOp):
+    """Op raise a tensor to an (integer) power."""
+
+    def __init__(self, scalar: int):
+        self.scalar = scalar
+
+    def compute(self, a: NDArray) -> NDArray:
+        return array_api.power(a, self.scalar)
+
+    def gradient(self, out_grad, node):
+        a = node.inputs[0]
+        return self.scalar * (power_scalar(a, self.scalar-1)) * out_grad
+```
+
+- EWiseDiv  
+这个算子的作用是对张量逐元素求商。梯度计算很简单，即 $a/b$ 分别对 $a$ 和 $b$ 求偏导：
+
+```python
+class EWiseDiv(TensorOp):
+    """Op to element-wise divide two nodes."""
+
+    def compute(self, a, b):
+        return array_api.true_divide(a, b)
+
+    def gradient(self, out_grad, node):
+        a, b = node.inputs
+        return out_grad/b , -a/b/b*out_grad
+```
+
+- DivScalar  
+这个算子的作用是将整个张量同除 scalar，和 `PowerScalar` 一样，scalar 是不要考虑梯度的：
+
+```python
+class DivScalar(TensorOp):
+    def __init__(self, scalar):
+        self.scalar = scalar
+
+    def compute(self, a):
+        return array_api.true_divide(a, self.scalar)
+
+    def gradient(self, out_grad, node):
+        return out_grad/self.scalar
+```
+
+- MatMul  
+这个算子的作用是矩阵乘法。这是这门课程到现在第一个具有挑战性的任务。在计算梯度时，根据课程给出的方法，可以得到如下两个表达式：
+
+```python
+adjoint1 = out_grad @ transpose(b)
+adjoint2 = transpose(a) @ out_grad
+```
+
+但但但是，以上只是理论推导。在实际应用中，存在两个问题：1) 矩阵乘法可能是高维矩阵而非二维矩阵相乘，例如 shape 为 (2, 2, 3, 4) 和 (2, 2, 4, 5) 的两个张量相乘；2) 张量乘法过程可能存在广播的情况，这种情况下的梯度怎么处理。
+
+第一个问题，NumPy 基本都为我们处理好了，只要两个张量的**倒数两个维度**符合二维矩阵乘法且**其余维度**（也称为批量维度）相等，或者某个批量维度为 1（会进行广播），它们就可以进行张量乘法运算。
+
+天下没有免费的午餐，自动广播带来便利的同时，也带来了第二个问题。求出的 adjoint 或者说偏导，应该和输入参数的维度一致，但根据公式计算得到的梯度的维度和广播后的维度一样，因此要进行 reduce 操作。
+
+以下是我不严谨且非形式化的 reduce 操作推导：假设矩阵 $A_{m\times n}$ 经过广播后是 $A_{p\times n\times n}^\prime$，实际上参与计算的就是这个 $A^\prime$。首先直接假设在计算图上用 $A^\prime$ 替代 $A$，当 $A^\prime @B$（该节点记为 $f(x_1,...)$）的某个输入节点 $x_1$ 需要计算梯度时，就会需要计算张量 $\partial f/ \partial x_1$ 和张量 $A^\prime$ 求得的偏导之间的乘积。接下来我们把 $A$ 还原，相对应的，$f(x_1, ...)$ 这个节点计算梯度就要将 $p$ 维度上的偏导数全部加起来，这体现在 $A_{p\times n\times n}^\prime$ 也是将其 $p$ 维度上的元素全部加起来，得到 $A^\prime_{m\times n}$。
+
+上面这段描述不太清晰，总而言之就是要将广播出来的维度全部 sum 掉。
+
+NumPy 中广播新增的维度只会放在最前面，因此只需要计算出要 sum 掉维度的个数，然后取前 $n$ 个维度即可，具体见代码：
+
+```python
+class MatMul(TensorOp):
+    def compute(self, a, b):
+        return a@b
+
+    def gradient(self, out_grad, node):
+        a, b = node.inputs
+        adjoint1 = out_grad @ transpose(b)
+        adjoint2 = transpose(a) @ out_grad
+        adjoint1 = summation(adjoint1, axes=tuple(range(len(adjoint1.shape) - len(a.shape))))
+        adjoint2 = summation(adjoint2, axes=tuple(range(len(adjoint2.shape) - len(b.shape))))
+        return adjoint1, adjoint2
+```
+
+- Summation  
+这个算子的作用是对张量的指定维度求和。设带求和的张量 $X$ 的维度为 $s_1\times s_2\times ... \times s_n$，那么求和之后的维度就是移除掉 $axes$ 中指示的维度，形式化表达为：
+
+{{< math_block >}}
+\text{SUM}(X_{s_1\times s_2\times ... \times s_n}, axes) = [\sum_{s_i \in axes} X]_{\{s_j | j\notin axes \}}
+{{< /math_block >}}
+
+假设一个输入为的 shape 为 $3\times 2\times 4 \times 5$，在第 0 和 2 的维度上做 summation，输出的 shape 为 $2\times 5$。反向传播的过程就是先把 `out_grad` 扩展到 $1\times 2 \times 1\times 5$，然后广播到输入的 shape。
+
+埋个坑，这部分还没有理解，不知道怎么形式化表达求和运算与并对其求导，误打误撞以下代码通过了测试：
+
+```python
+class Summation(TensorOp):
+    def __init__(self, axes: Optional[tuple] = None):
+        self.axes = axes
+
+    def compute(self, a):
+        return array_api.sum(a, axis=self.axes)
+
+    def gradient(self, out_grad, node):
+        a = node.inputs[0]
+        shape = list(a.shape)
+        axes = self.axes
+        if axes is None:
+            axes = list(range(len(shape)))
+        for _ in axes:
+            shape[_] = 1
+        return broadcast_to(reshape(out_grad, shape), a.shape)
+```
+
+- BroadcastTo  
+这个算子的作用是将张量广播到指定的 shape。所谓广播，就是将数据在不存在或者大小为 1 的维度上复制多份，使之与目标 shape 相匹配。
+
+关于广播算子正向和梯度运算的分析，可查看 MatMul 算子，其对广播过程有详细讨论。本算子实现代码为：
+
+```python
+class BroadcastTo(TensorOp):
+    def __init__(self, shape):
+        self.shape = shape
+
+    def compute(self, a):
+        return array_api.broadcast_to(a, self.shape)
+
+    def gradient(self, out_grad, node):
+        input_shape = node.inputs[0].shape
+        ret = summation(out_grad, tuple(range(len(out_grad.shape) - len(input_shape))))
+        for i, dim in enumerate(input_shape):
+            if dim == 1:
+              ret = summation(ret, axes=(i,))
+        return reshape(ret, input_shape)
+```
+
+- Reshape  
+这个算子的作用是将张量重整至指定 shape。反向运算则是将张量重整至输入张量的 shape。其代码实现相当简单：
+
+```python
+class Reshape(TensorOp):
+    def __init__(self, shape):
+        self.shape = shape
+
+    def compute(self, a):
+        return array_api.reshape(a, self.shape)
+
+    def gradient(self, out_grad, node):
+        return reshape(out_grad, node.inputs[0].shape)
+```
+
+- Negate  
+这个算子作用是将整个张量取相反数，反向运算则是再取一次相反数。其代码实现为：
+
+```python
+class Negate(TensorOp):
+    def compute(self, a):
+        return array_api.negative(a)
+
+    def gradient(self, out_grad, node):
+        return negate(out_grad)
+```
+
+- Transpose  
+这个算子的作用是交换指定的两个轴，如果没指定则默认为最后两个轴。注意，这个算子的行为与 `np.transpose` 不一致，需要调用 API 是 `np.swapaxes`。反向运算则是再次交换这两个轴：
+
+```python
+class Transpose(TensorOp):
+    def __init__(self, axes: Optional[tuple] = None):
+        self.axes = axes
+
+    def compute(self, a):
+        if self.axes is None:
+            return array_api.swapaxes(a, -1, -2)
+        else:
+            return array_api.swapaxes(a, *self.axes)
+
+    def gradient(self, out_grad, node):
+        return transpose(out_grad, self.axes)
+```
+
+## Topological sort
+
+这一小问要求实现拓扑排序，涉及的知识点都是数据结构的内容，包括图的拓扑排序、后序遍历和 dfs 算法。
+
+在问题说明中明确要求使用树的后序遍历对算法图求解其拓扑序列，简单来说就是如果本节点存在未访问的子节点（inputs），则先访问子节点，否则访问本节点。所谓访问本节点，就是将其标记为已访问，并将其放入拓扑序列。
+
+结合 dfs 算法，求拓扑序列的代码为：
+
+```python
+def find_topo_sort(node_list: List[Value]) -> List[Value]:
+    visited = dict()
+    topo_order = []
+    for node in node_list:
+        if not visited.get(node, False):
+            topo_sort_dfs(node, visited, topo_order)
+    return topo_order
+
+def topo_sort_dfs(node, visited: dict, topo_order):
+    sons = node.inputs
+    for son in sons:
+        if not visited.get(son, False):
+            topo_sort_dfs(son, visited, topo_order)
+    visited[node] = True
+    topo_order.append(node)
+```
+
+## Implementing reverse mode differentiation
+
+终于开始组装我们的自动微分算法了！核心就是理论课中介绍的反向模式 AD 的算法为代码：  
+![image.png](https://pics.zhouxin.space/202406152001945.webp?x-oss-process=image/quality,q_90/format,webp)  
+其中有几个注意点：
+
+- `autograd.py` 文件最后一部分提供了一个助手函数 `sum_node_list(node_list)`，用于在不创造冗余节点的情况下，对一系列 node 求和，对应伪代码中对 $\overline{v_i}$ 求和的部分；
+- 只有存在输入的节点才要计算梯度，初始 input 节点是没法计算梯度的，要进行判断；
+- `node.op.gradient` 返回值类型未 `Tuple | Tensor`，要分类处理。
+
+在写代码之前，最好复习一遍理论；在 debug 的过程中，可以自己画一下计算图，会有奇效。反向模式 AD 具体实现为：
+
+```python
+def compute_gradient_of_variables(output_tensor, out_grad) -> None:
+    for node in reverse_topo_order:
+        node.grad = sum_node_list(node_to_output_grads_list[node])
+        if len(node.inputs) > 0:
+            gradient = node.op.gradient(node.grad, node)
+            if isinstance(gradient, tuple):
+                for i, son_node in enumerate(node.inputs):
+                    node_to_output_grads_list.setdefault(son_node, [])
+                    node_to_output_grads_list[son_node].append(gradient[i])
+            else:
+                node_to_output_grads_list.setdefault(node.inputs[0], [])
+                node_to_output_grads_list[node.inputs[0]].append(gradient)
+```
+
+## Softmax loss
+
+本问题先要完成对数函数和指数函数的前向和反向计算，然后再完成 softmax 损失，也就是交叉熵损失函数。
+
+根据说明，这里传入的 y 已经转为了独热编码。具体实现根据说明中的公式一点点写即可，没有要特别说明的：
+
+```python
+def softmax_loss(Z, y_one_hot):
+    batch_size = Z.shape[0]
+    lhs = ndl.log(ndl.exp(Z).sum(axes=(1, )))
+    rhs = (Z * y_one_hot).sum(axes=(1, ))
+    loss = (lhs - rhs).sum()
+    return loss / batch_size
+```
+
+## SGD for a two-layer neural network
+
+最后一问，利用前面的组件，实现一个双层感知机及其随机梯度下降算法。注意事项：
+
+- 这里传入的 y 的值是其 label，需要转为独热编码；
+- 一定要仔细看题！在计算两个权重的更新值时，应该使用 NumPy 计算，再转为 Tensor。如果直接使用 Tensor 算子计算，每次更新都会在计算图上新增好几个节点，并指数级增长，这会导致后面一些要 600 多 batch 的测试点要跑十几分钟，实际上只要几秒钟就能跑完。如果你遇到了同样的问题，请再读一遍题目要求。  
+代码为：
+
+```python
+def nn_epoch(X, y, W1, W2, lr=0.1, batch=100):
+    batch_cnt = (X.shape[0] + batch - 1) // batch
+    num_classes = W2.shape[1]
+    one_hot_y = np.eye(num_classes)[y]
+    for batch_idx in range(batch_cnt):
+        start_idx = batch_idx * batch
+        end_idx = min(X.shape[0], (batch_idx+1)*batch)
+        X_batch = X[start_idx:end_idx, :]
+        y_batch = one_hot_y[start_idx:end_idx]
+        X_tensor = ndl.Tensor(X_batch)
+        y_tensor = ndl.Tensor(y_batch) 
+        first_logits = X_tensor @ W1 # type: ndl.Tensor
+        first_output = ndl.relu(first_logits) # type: ndl.Tensor
+        second_logits = first_output @ W2 # type: ndl.Tensor
+        loss_err = softmax_loss(second_logits, y_tensor) # type: ndl.Tensor
+        loss_err.backward()
+        
+        new_W1 = ndl.Tensor(W1.numpy() - lr * W1.grad.numpy())
+        new_W2 = ndl.Tensor(W2.numpy() - lr * W2.grad.numpy())
+        W1, W2 = new_W1, new_W2
+
+    return W1, W2
+
+```
+
+## hw 1 小结
+
+明显感觉到，这个 hw 的强度上来了。由于不太熟悉 NumPy 的运算，中间查了不少资料和别人的实现。感谢 [@# xx要努力](https://www.zhihu.com/people/xiao-xiong-34-11) 的文章 [^1]，不少都是参考他的实现。
+
+最后双层感知机的调试，由于使用了 Tensor 算子来实现，跑了十几分钟，最后才发现题干已经要求使用 NumPy 运算。长了个很大的教训，下次一定好好读题。
+
 # 参考文档
+
+[^1]: [zhuanlan.zhihu.com/p/579465666](https://zhuanlan.zhihu.com/p/579465666)

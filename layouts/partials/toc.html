@@ -150,9 +150,37 @@
         let win = element.ownerDocument.defaultView;
         return rect.top + win.pageYOffset;   
     }
+
+    window.addEventListener('scroll', () => {
+        // Check if there is an object in the top half of the screen or keep the last item active
+        activeElement = Array.from(elements).find((element) => {
+            if ((getOffsetTop(element) - window.pageYOffset) > 0 && 
+                (getOffsetTop(element) - window.pageYOffset) < window.innerHeight / 2) {
+                return element;
+            }
+        }) || activeElement;
+    
+        elements.forEach(element => {
+            const id = encodeURI(element.getAttribute('id')).toLowerCase();
+            const tocLink = document.querySelector(`.inner ul li a[href="#${id}"]`);
+            if (element === activeElement){
+                tocLink.classList.add('active');
+    
+                // Ensure the active element is in view within the .inner container
+                const tocContainer = document.querySelector('.toc .inner');
+                const linkOffsetTop = tocLink.offsetTop;
+                const containerHeight = tocContainer.clientHeight;
+                const linkHeight = tocLink.clientHeight;
+    
+                // Calculate the scroll position to center the active link
+                const scrollPosition = linkOffsetTop - (containerHeight / 2) + (linkHeight / 2);
+                tocContainer.scrollTo({ top: scrollPosition, behavior: 'smooth' });
+            } else {
+                tocLink.classList.remove('active');
+            }
+        });
+    }, false);
+    
+    
 </script>
 {{- end }}
-
-————————————————
-版权声明：本文为「Sulv's Blog」的原创文章，遵循CC 4.0 BY-SA版权协议，转载请附上原文出处链接及本声明。
-原文链接：https://www.sulvblog.cn/posts/blog/hugo_toc_side/

@@ -2,11 +2,16 @@
 title: Blog更新日志
 tags: 
 date: 2024-04-02T12:26:00+08:00
-lastmod: 2024-06-20T12:46:00+08:00
+lastmod: 2024-07-08T20:03:00+08:00
 publish: true
 dir: logs
 slug: blog logs
 ---
+
+## 2024-07-08
+
+- 实现侧边目录
+- TOP 按钮增加阅读进度展示
 
 ## 2024-06-20
 

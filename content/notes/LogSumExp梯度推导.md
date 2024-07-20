@@ -7,6 +7,7 @@ lastmod: 2024-07-20T12:23:00+08:00
 publish: true
 dir: notes
 slug: gradient of log sum exp
+math: "true"
 ---
 
 # 前言

@@ -3,7 +3,7 @@ title: LogSumExp梯度推导
 tags:
   - 深度学习系统
 date: 2024-07-20T11:08:00+08:00
-lastmod: 2024-07-20T12:37:00+08:00
+lastmod: 2024-07-24T14:20:00+08:00
 publish: true
 dir: notes
 slug: gradient of log sum exp
@@ -73,8 +73,43 @@ math: "true"
 
 这里我们讨论的是 $f\in \mathbb{R}$ 且 $z\in\mathbb{R}^n$ 的情况，实际情况中，$f$ 和 $z$ 都是高维张量，我们要求 $z$ 关于 $z$ 的梯度，即 $\nabla_z f$。
 
-接下来根据 shape 来推测如何使用代码实现。$f$ 在计算过程中进行了 `max` 和 `summation` 操作，指定的纬度均是 `axes`，记 `n=z.shape.length(); m = axes.length();`，那么公式 $\frac{\exp{\hat{z}_j}}{\sum\exp\hat{z}_i}$ 计算出来的 shape 应该与 $f$ 一致，`f.shape.length()` 应该等于 `n-m`，而我们实际要求的梯度的 shape 应该与输入 `z` 一致，只要讲公式计算出的梯度矩阵广播到 `z.shape()` 即可。
+# 代码实现
+
+首先感谢 [yofufufufu](https://github.com/yofufufufu) 的不吝赐教，代码实现主要参考他的解释 [^2]。我们继续来化简公式：
+
+{{< math_block >}}
+\begin{align*}
+\frac{\partial{f}}{\partial{z_j}}
+&=\frac{\exp{\hat{z}_j}}{\sum_{i=1}^n\exp\hat{z}_i}\\
+&=\exp(z_j - \log \sum_{i=1}^n\exp\hat{z}_i)\\
+&=\exp(z_j - f)
+\end{align*}
+{{< /math_block >}}
+
+惊喜地发现，LogSumExp 这个函数的梯度可以用其输入和输出来表示，那在代码实现中，只要获取该节点的输入和输出就可以计算出梯度，即在 cmu10414 课程，该节点实现如下：
+
+```python
+class LogSumExp(TensorOp):
+    def __init__(self, axes: Optional[tuple] = None):
+        self.axes = axes
+
+    def compute(self, Z):
+        ### BEGIN YOUR SOLUTION
+        max_z = array_api.max(Z, axis=self.axes, keepdims=True)
+        return array_api.log(array_api.sum(array_api.exp(Z - max_z), axis=self.axes)) + max_z.squeeze()
+        ### END YOUR SOLUTION
+
+    def gradient(self, out_grad, node):
+        ### BEGIN YOUR SOLUTION
+        if self.axes is None:
+            self.axes = tuple(range(len(node.inputs[0].shape)))
+        z = node.inputs[0]
+        shape = [1 if i in self.axes else z.shape[i] for i in range(len(z.shape))]
+        gradient = exp(z - node.reshape(shape).broadcast_to(z.shape))
+        return out_grad.reshape(shape).broadcast_to(z.shape)*gradient
+```
 
 # 参考资料
 
 [^1]: [logsumexp 反向传播推导\_logsumexp (lse)-CSDN博客](https://blog.csdn.net/u010043946/article/details/134408424)
+[^2]: [hw2 LogSumExp梯度公式推导 · Issue #4 · kcxain/dlsys · GitHub](https://github.com/kcxain/dlsys/issues/4#issuecomment-2242385479)

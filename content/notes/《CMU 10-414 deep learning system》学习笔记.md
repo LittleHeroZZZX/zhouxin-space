@@ -890,6 +890,415 @@ $$
 
 谢谢你的回答！我才理解为啥要实现`LogSumExp`和“数值稳定”的含义。您推到的反向传播公式我理解了，但具体到数值稳定版本的`LogSumExp`，就是将您给出的公式中的$z_i$使用$z_i - \max z$替代，那梯度公式就变成了$\exp (z_i -\max z - \text{LogSumExp})$
 
+# Lecture 10: Convolutional Networks
+## Convolutional operators in deep networks
+在hw2中，我们通过flatten操作将图片视作一个序列进行计算，这对于小尺寸的图片是可行的，但对于大尺寸的图片，例如256×256的图片，将会导致输入异常庞大，网络也随之变大。这种简单粗暴的处理方式不利于提取图片的内在特征，例如，如果对图片进行平移，其输入序列的变化相当大。
+
+卷积网络出于以下两个动机：
+- 层之间的激活以局部的方式发生，并且隐藏层的输出也被视为图像
+- 在所有的空间位置共享权重
+
+卷积网络有以下两个优点：
+- 使用的参数很少。参数量由卷积网络的大小决定，而和输入的shape无关；
+- 能够很好地捕获图片的内在不变形。
+
+卷积的计算示意如下图所示，卷积核在原图上滑动，从而产生一张新的图片。
+![image.png](https://pics.zhouxin.space/202407250959153.png?x-oss-process=image/quality,q_90/format,webp)
+
+在深度学习中，输入和隐藏层都很少是一个1D的矩阵，一般而言，其是由多个通道的。例如，一张彩色图片由RGB三通道组成，而中间的隐藏层，通常会有比较大的通道数，如下图所示：
+![image.png](https://pics.zhouxin.space/202407251015471.png?x-oss-process=image/quality,q_90/format,webp)
+记卷积层的输入$x\in \mathbb{R}^{h\times w \times c_{in}}$，输出$z\in \mathbb{R}^{h\times w \times c_{out}}$。从上图可以发现，卷积输出的某个通道，都是由输入在同一个局部的所有通道共同决定的，因此，卷积核$W\in \mathbb{R}^{c_{in}\times c_{out}\times k \times k}$，卷积过程可以形式化表示为：
+$$
+z[:,:,s] = \sum_{r=1}^{c_{in}}x[:,:,r] \cdot W[r,s,:,:]
+{{< math_block >}}
+关于多通道卷积，另外一种更符合直觉的理解是将相同位置的各通道的组合看作是一个向量，即下图中，$x$每一格都是一个向量，$W$每一格都是$c_{out} \times c_{in}$的矩阵，卷积的输出由对应位置的$z$和$W$按矩阵乘法并求和得到。
+![image.png](https://pics.zhouxin.space/202407251027480.png?x-oss-process=image/quality,q_90/format,webp)
+
+## Elements of practical convolutions
+在实际的卷积操作中，通常还会应用一些别的技术。
+- Padding
+原始的卷积操作，会将输出的长宽变小$k-1$个长度，通过在周围填充$(k-1)/2$个0元可以保证输出的shape与输入一致。为了避免两侧填充不一致这个别扭的情况，我们一般选取卷积核大小为奇数。
+
+- Strided Convolutions / Pooling
+经过padding之后的卷积操作，不改变图片的shape，但在实际应用中，通常会对图片进行下采样。用两种解决方案：
+1. 使用最大/平均池化来聚合信息，例如，使用一个2×2的核进行池化操作，每次移动的步长为2，就可以将整张图片长宽各放缩至原来一半；
+2. 卷积操作时，卷积核移动的步长大于1。
+
+- Grouped Convolutions
+当输入和输出的通道数很大时，卷积核的参数量仍可能非常非常大。一种解决方案是，使用分组卷积，即将输入通道分为多个组，每个组独立进行卷积操作，如下图所示。如果分为G组，则参数量可减少为原来的1/G。
+![image.png](https://pics.zhouxin.space/202407251311275.png?x-oss-process=image/quality,q_90/format,webp)
+
+- Dilations
+传统卷积的感受野和卷积核一样大，扩张卷积的思路是在卷积区域中插入间隔，能够扩大卷积核的感受野。下图表示的很形象。
+![image.png](https://pics.zhouxin.space/202407251316286.png?x-oss-process=image/quality,q_90/format,webp)
+
+## Differentiating convolutions
+正如前文所提到的，我们可以通过一系列矩阵向量乘法和求和运算来实现卷积操作，但这么做效率太低了，我们的计算图上有很多中间节点，这些中间变量将消耗大量的内存空间。因此，我们不应该使用微分库中的算子来计算卷子，而是将其作为一个算子来实现，并手动计算其微分。
+
+首先定义卷积操作：
+{{< /math_block >}}
+z = \operatorname{conv}(x,W)
+{{< math_block >}}
+$z$的梯度怎么与adjoints乘呢？这是个问题。$z$的梯度有以下二者：$\frac{\partial z}{\partial x}$和$\frac{\partial z}{\partial W}$，从形式上看，他们是3阶张量初以四阶张量，相当复杂。
+
+首先考虑最简单的矩阵和向量相乘的情况，即：
+{{< /math_block >}}
+z = Wx
+{{< math_block >}}
+那么$z$对$x$的导数就是$W$，即其与adjoint的乘法计算公式为：
+{{< /math_block >}}
+W^T\bar{v}
+{{< math_block >}}
+也就是说如果在前向传播中我们计算一个矩阵和向量的乘积，那么在反向传播中，我们要计算这个矩阵的转置和adjoint的乘积。那对于卷积来说，它的“转置”是什么呢？
+
+- 将卷积视为矩阵运算I
+以1d卷积为例，我们考虑如下的一个卷积运算，其中每个格子都是一个向量或者矩阵。
+![image.png](https://pics.zhouxin.space/202407251428228.png?x-oss-process=image/quality,q_90/format,webp)
+将上面这个矩阵运算展开，可以得到：
+{{< /math_block >}}
+\begin{bmatrix}z_1\\z_2\\z_3\\z_4\\z_5\end{bmatrix}=x*w=\begin{bmatrix}w_2&w_3&0&0&0\\w_1&w_2&w_3&0&0\\0&w_1&w_2&w_3&0\\0&0&w_1&w_2&w_3\\0&0&0&w_1&w_2\end{bmatrix}\begin{bmatrix}x_1\\x_2\\x_3\\x_4\\x_5\end{bmatrix}
+{{< math_block >}}
+有了$\hat{W}$，我们可以很容易地写出$\hat{W}^T$,即：
+{{< /math_block >}}
+\hat W^T=\begin{bmatrix}w_2&w_1&0&0&0\\w_3&w_2&w_1&0&0\\0&w_3&w_2&w_1&0\\0&0&w_3&w_2&w_1\\0&0&0&w_3&w_2\end{bmatrix}
+{{< math_block >}}
+不难发现，这个算子实际上是$[w_3, w_2, w_1]$这个卷积核，即原始卷积核翻转后的卷积核。也就是说，梯度和adjoint的乘积可以表示为：
+{{< /math_block >}}
+\hat{v}\frac{\partial \operatorname{conv}(x,w)}{\partial x} = \operatorname{conv}(\hat{v},\operatorname{flip}(w))
+{{< math_block >}}
+- 将卷积视为矩阵运算II
+接下来我们考虑卷积对于参数$w$的导数。同样，我们将矩阵运算展开，可以得到：
+{{< /math_block >}}
+\begin{bmatrix}z_1\\z_2\\z_3\\z_4\\z_5\end{bmatrix}=x*w=\begin{bmatrix}0&x_1&x_2\\x_1&x_2&x_3\\x_2&x_3&x_4\\x_3&x_4&x_5\\x_4&x_5&0\end{bmatrix}\begin{bmatrix}w_1\\w_2\\w_3\end{bmatrix}
+$$
+相比矩阵运算I，我们构造出的$\hat{X}$矩阵是一个密集矩阵，在实现卷积算子时，我们常常采用这个方案来运算。这个$\hat{X}$矩阵被称为“im2col”矩阵（image to column）。
+
+# Lecture 11: Hardware acceleration
+## General acceleration techniques
+现代机器学习框架可以视为两层：上层是计算图，用于前向推理、自动微分和反向传播；下层是张量线性代数库，其负责底层的张量计算。在needle中，我们目前使用numpy作为线性代数库。本节我们将介绍一些常见的加速技术。
+- Vectorization 向量化
+如果我们要将两个256长度的array相加，一种标量的处理方式是256个元素逐个相加，但是很多硬件都提供了批量从内存读取、向量运算指令，即优化为如下代码：
+```C
+void vecadd(float* A, float* B, float* C){
+	for(int i=0; i<64; i++){
+		float4 a = load_float4(A + i*4);
+		float4 b = load_float4(B + i*4);
+		float4 c = add_float4(a, b);
+		store_float4(C + i*4, c);
+	}
+}
+```
+
+这里要求ABC所在的内存块要是按照128 bit对齐的。
+
+- Data layout & strides 数据布局&步幅
+在内存中，数据是线性排列的，因此一个矩阵在内存中有两种布局方式：行优先和列优先。一些古老的语言使用列优先，现代的语言偏向使用行优先。
+
+在许多库中，还引入了一种stride格式布局，即在保存张量时，额外保存一个数据，用于标识每个维度上需要移动的步长。在这种情况下，`a[i, j] = a_data[i * strides[0] + j * strides[1]]`
+
+这个方案可以在不用复制数据的情况下实现很多操作：通过改变offset和shape来实现切片；通过交换strides来实现转置；通过插入等于0的stride来实现广播。
+
+其缺点是访存操作可能不再连续，因此向量化技术不可用，很多库也需要先把他们拼接之后再使用。
+
+- Parallelization 并行化
+使用openmp可以将计算分配给多个核并行处理：
+```C
+void vecadd(float* A, float* B, float* C){
+	#pragma omp parallel for
+	for(int i=0; i<64; i++){
+		float4 a = load_float4(A + i*4);
+		float4 b = load_float4(B + i*4);
+		float4 c = add_float4(a, b);
+		store_float4(C + i*4, c);
+	}
+}
+```
+
+## Case study: matrix multiplication
+本节我们将讨论如何优化矩阵乘法。
+- Vanilla matrix multiplication 朴素矩阵乘法
+最朴素的想法是使用三重循环完成，其复杂度是$O(n^3)$，即如下代码：
+```c
+float A[n][n], B[n][n], C[n][n];
+
+for(int i=0; i<n; i++){
+	for(int j=0; j<n; j++){
+		c[i][j] = 0;
+		for(int k=0; k<n; k++){
+		c[i][j] += A[i][k] * B[k][j];
+		}
+	}
+}
+```
+
+在现代存储器中，L1 cache的速度比DRAM快200倍，通过优化数据的读取就可以显著提升计算速度，考虑到这一点，我们可以将中间变量保存到寄存器中，即：
+```c
+dram float A[n][n], B[n][n], C[n][n];
+
+for(int i=0; i<n; i++){
+	for(int j=0; j<n; j++){
+		register float c = 0;
+		for(int k=0; k<n; k++){
+		register float a = A[i][k];
+		register float b = B[k][j];
+		c += a*b;
+		}
+		C[i][j] = c;
+	}
+}
+```
+上述代码中，从读取A、B到寄存器的操作分别进行了$n^3$次，需要3个寄存器来完成该操作。
+
+- Register tiled matrix multiplication 寄存器分块矩阵乘法
+该方案的思路是将结果进行分块，每次计算其中的一块，即：
+```c
+dram float A[n/v1][n/v3][v1][v3];
+dram float B[n/v2][n/v3][v2][v3];
+dram float C[n/v1][n/v2][v1][v2];
+
+for (int i = 0; i < n/v1; ++i) {
+    for (int j = 0; j < n/v2; ++j) {
+        register float c[v1][v2] = 0;
+        for (int k = 0; k < n/v3; ++k) {
+            register float a[v1][v3] = A[i][k];
+            register float b[v2][v3] = B[j][k];
+            c += dot(a, b.T);
+        }
+        C[i][j] = c;
+    }
+}
+```
+上述代码中，要计算的矩阵C被分为$v_1\times v_2$的小矩阵，为了计算出每一块，每次必须从A中选出$v_1$行，从B中选出$v_2$列，这两组子矩阵可以按照长度$v_3$再次划分。在计算中，前两个循环依次遍历C中的一小块，然后初始化$v_1 \times v_2$个寄存器用于保存该块内容，然后再根据$v_3$的大小二次划分，进行矩阵运算，将这些结果加到对应的寄存器上，第三个循环结束后就计算出C的一个子块。
+
+A的数据加载开销是$n^3/v_2$，B的数据加载开销是$n^3/v_1$，A的寄存器开销是$v_1 \times v_3$，B的寄存器开销是$v_2\times v_3$，C的寄存器开销是$v_1\times v_2$。注意到$v_3$不影响数据加载的开销，因此可以取$v_3$为1，然后在满足寄存器总数约束的情况下，最大化$v_1$和$v_2$。
+
+之所以能够减小开销是因为在矩阵计算中，元素被重复使用，通过每次计算一个分块的方式，可以保证这个分块内用到的重复数据只要加载一次。
+
+- Cache line aware tiling 缓存行感知分块
+前面我们使用寄存器来进行加速，本节我们考虑使用cache来加速。我们的实现代码为：
+```c
+dram float A[n/b1][b1][n];
+dram float B[n/b2][b2][n];
+dram float C[n/b1][n/b2][b1][b2];
+
+for (int i = 0; i < n/b1; ++i) {
+    l1cache float a[b1][n] = A[i];
+    for (int j = 0; j < n/b2; ++j) {
+        l1cache float b[b2][n] = B[j];
+        
+        C[i][j] = dot(a, b.T);
+    }
+}
+```
+上述代码中，结果矩阵C被分块为$b_1 \times b_2$，A和B分别按行和按列分块，通过两层循环遍历计算C中的每个子块，计算子块的过程可以使用寄存器分块进行加速。
+
+上述代码中，A的加载开销是$n^2$，B的加载开销是$n^3/b1$。有两个约束，一个是$b_1n+b_2n < \text{l1 chche size}$，另一个是$b_1 \% v_1=b_2 \% v_2 = 0$。
+
+- Put it together
+将缓存版本的`dot`运算使用寄存器版本展开，可以得到最终的分块乘法实现：
+```c
+dram float A[n/b1][b1/v1][n][v1];
+dram float B[n/b2][b2/v2][n][v2];
+
+for (int i = 0; i < n/b1; ++i) {
+    l1cache float a[b1/v1][n][v1] = A[i];
+    for (int j = 0; j < n/b2; ++j) {
+        l1cache b[b2/v2][n][v2] = B[j];
+        for (int x = 0; x < b1/v1; ++x)
+            for (int y = 0; y < b2/v2; ++y) {
+                register float c[v1][v2] = 0;
+                for (int k = 0; k < n; ++k) {
+                    register float ar[v1] = a[x][k][:];
+                    register float br[v2] = b[y][k][:];
+                    C += dot(ar, br.T)
+                }
+            }
+    }
+}
+```
+
+上述代码的数据加载开销是：
+$$
+speed_{l1}\cdot(\frac{n^3}{v_2}+\frac{n^3}{v1})+speed_{dram}\cdot(n^2+\frac{n^3}{b_1})
+$$
+
+# Lecture 12: GPU acceleration
+## GPU programming
+如下图所示，CPU是一种通用处理器，其可以灵活地处理不同的任务，每个核都有独立的控制器。但在某些任务，例如图形渲染中，可能存在大量的重复工作，例如给每个像素都进行相同的处理。GPU正是擅长处理此类任务，其有大量的执行单元，可以批量执行同一指令。将GPU应用于深度学习，可以带来10X ~ 100X的加速倍率。
+![image.png](https://pics.zhouxin.space/202407260953795.png?x-oss-process=image/quality,q_90/format,webp)
+- GPU programming model: SIMT
+在本章节，我们将使用CUDA中的术语，但是在别的模型中，通常也有对应的概念。
+
+SIMT中所有的线程都执行相同的指令，但是具有不同的数据通路。线程被分组为block，每个block共享内存。block被分组为launch grid，当启动一个kernel时，实际上就是在一个grid上执行。
+- Example: vector add
+以下代码演示了在CPU和GPU上执行向量加法的过程：
+```c
+void VecAddCPU(float* A, float *B, float* C, int n) {
+    for (int i = 0; i < n; ++i) {
+        C[i] = A[i] + B[i];
+    }
+}
+
+__global__ void VecAddKernel(float* A, float *B, float* C, int n) {
+    int i = blockDim.x * blockIdx.x + threadIdx.x;
+    if (i < n) {
+        C[i] = A[i] + B[i];
+    }
+}
+```
+
+从GPU版本我们可以看到，每个线程执行的指令都是相同，不同的是每个线程具有不同的环境变量。
+
+为了执行上述GPU代码，在主机端要执行以下内容：
+```c
+void VecAddCUDA(float *Acpu, float *Bcpu, float *Ccpu, int n) {
+    float *dA, *dB, *dC;
+    cudaMalloc(&dA, n * sizeof(float));
+    cudaMalloc(&dB, n * sizeof(float));
+    cudaMalloc(&dC, n * sizeof(float));
+
+    cudaMemcpy(dA, Acpu, n * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(dB, Bcpu, n * sizeof(float), cudaMemcpyHostToDevice);
+
+    int threads_per_block = 512;
+    int nblocks = (n + threads_per_block - 1) / threads_per_block;
+    VecAddKernel<<<nblocks, threads_per_block>>>(dA, dB, dC, n);
+
+    cudaMemcpy(Ccpu, dC, n * sizeof(float), cudaMemcpyDeviceToHost);
+
+    cudaFree(dA);
+    cudaFree(dB);
+    cudaFree(dC);
+}
+```
+函数的输入是来自cpu内存上的三个数组，在GPU上分配出对应大小的显存，然后将两个加数拷贝到设备中。根据数据的规模确定要启用的block数量，然后执行GPU代码，最后将结果拷贝会CPU内存并释放相应显存。
+
+在实际中，内存拷贝是一个非常耗时的过程，因此我们希望将数据一直保留在显存中进行计算，而非频繁地来回拷贝。
+
+- Example: window sum
+window sum是一种权重全为1的卷积，一种朴素的想法是这么些的：
+```c
+#define RADIUS 2
+
+__global__ void WindowSumSimpleKernel(float* A, float *B, int n) {
+    int out_idx = blockDim.x * blockIdx.x + threadIdx.x;
+    if (out_idx < n) {
+        float sum = 0;
+        for (int dx = -RADIUS; dx <= RADIUS; ++dx) {
+            sum += A[dx + out_idx + RADIUS];
+        }
+        B[out_idx] = sum;
+    }
+}
+
+```
+但显然，这个算法并不高效，将重复访问数据，要加载$5n$次数据。
+
+这时候可以引入共享内存进行优化，将一个block内要要用到的数据全部读取到共享内存中。数据加载的任务可以分给每个线程并行完成，显著降低了内存加载时间开销。
+
+```C
+__global__ void WindowSumSharedKernel(float* A, float* B, int n) {
+    __shared__ float temp[THREADS_PER_BLOCK + 2 * RADIUS];
+    int base = blockDim.x * blockIdx.x;
+    int out_idx = base + threadIdx.x;
+    if (base + threadIdx.x < n) {
+        temp[threadIdx.x] = A[base + threadIdx.x];
+    }
+    if (threadIdx.x < 2 * RADIUS && base + THREADS_PER_BLOCK + threadIdx.x < n) {
+        temp[threadIdx.x + THREADS_PER_BLOCK] = A[base + THREADS_PER_BLOCK + threadIdx.x];
+    }
+    __syncthreads();
+    if (out_idx < n) {
+        float sum = 0;
+        for (int dx = -RADIUS; dx <= RADIUS; ++dx) {
+            sum += temp[threadIdx.x + dx + RADIUS];
+        }
+        B[out_idx] = sum;
+    }
+}
+
+```
+通过`__syncthreads`同步，确保所有线程都将数据加载完毕，然后再计算window sum。
+
+
+## Case study: matrix multiplication on GPU
+从线程的细粒度来说，我们可以在GPU上实现一个寄存器分块版本的矩阵乘法：
+```c
+__global__ void mm(float A[N][N], float B[N][N], float C[N][N]) {
+    int ybase = blockIdx.y * blockDim.y + threadIdx.y;
+    int xbase = blockIdx.x * blockDim.x + threadIdx.x;
+
+    float c[V][V] = {0};
+    float a[V], b[V];
+    for (int k = 0; k < N; ++k) {
+        a[:] = A[k, ybase*V : ybase*V + V];
+        b[:] = B[k, xbase*V : xbase*V + V];
+        for (int y = 0; y < V; ++y) {
+            for (int x = 0; x < V; ++x) {
+                c[y][x] += a[y] * b[x];
+            }
+        }
+    }
+    C[ybase * V : ybase * V + V, xbase * V : xbase * V + V] = c[:,:];
+}
+
+```
+每个线程负责计算一个分块的结果，即每次计算下图中的一块。
+![image.png](https://pics.zhouxin.space/202407261324561.png?x-oss-process=image/quality,q_90/format,webp)
+还可以将计算一块的任务交给一个block，这样就可以使用共享内存技术有block内的线程共同加载要用到的数据。
+```c
+__global__ void mm(float A[N][N], float B[N][N], float C[N][N]) {
+    __shared__ float sA[S][L], sB[S][L];
+    float c[V][V] = {0};
+    float a[V], b[V];
+    int yblock = blockIdx.y;
+    int xblock = blockIdx.x;
+
+    for (int ko = 0; ko < N; ko += S) {
+        __syncthreads();
+        // needs to be implemented by thread cooperative fetching
+        sA[:, :] = A[ko + S, yblock * L : yblock * L + L];
+        sB[:, :] = B[ko + S, xblock * L : xblock * L + L];
+        __syncthreads();
+
+        for (int ki = 0; ki < S; ++ki) {
+            a[:] = sA[ki, threadIdx.x * V + V];
+            b[:] = sB[ki, threadIdx.x * V + V];
+            for (int y = 0; y < V; ++y) {
+                for (int x = 0; x < V; ++x) {
+                    c[y][x] += a[y] * b[x];
+                }
+            }
+        }
+    }
+
+    int ybase = blockIdx.y * blockDim.y + threadIdx.y;
+    int xbase = blockIdx.x * blockDim.x + threadIdx.x;
+    C[ybase * V : ybase * V + V, xbase * V : xbase * V + V] = c[:, :];
+}
+
+```
+上述代码从全部内存到共享内存的加载过程被复用L次（计算每个分块矩阵都要读取L次AB的行列向量），从共享内存到寄存器被复用V次（在分块矩阵中按照长度V进行了二次分块计算）
+![image.png](https://pics.zhouxin.space/202407261448550.png?x-oss-process=image/quality,q_90/format,webp)
+各线程读取数据到共享内存的过程为：
+```c
+sA[:, :] = A[k : k + S, yblock * L : yblock * L + L];
+
+
+int nthreads = blockDim.y * blockDim.x;
+int tid = threadIdx.y * blockDim.x + threadIdx.x;
+for(int j = 0; j < L * S / nthreads; ++j) {
+    int y = (j * nthreads + tid) / L;
+    int x = (j * nthreads + tid) % L;
+    s[y, x] = A[k + y, yblock * L + x];
+}
+
+```
+
+# Lecture 13: Hardware Acceleration Implemetation
+这节是实验课，在这节课中，我们将学习needle库中CPU和GPU底端具体实现的代码骨架。
+
+
 
 # 参考文档
 

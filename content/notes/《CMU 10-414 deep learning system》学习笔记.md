@@ -4,7 +4,7 @@ tags:
   - CUDA
   - 深度学习系统
 date: 2024-05-28T12:24:00+08:00
-lastmod: 2024-07-09T10:53:00+08:00
+lastmod: 2024-07-30T10:46:00+08:00
 publish: true
 dir: notes
 slug: notes on cmu 10-414 deep learning system
@@ -860,20 +860,17 @@ z_{i+1} &=\frac{\hat{z}_{i+1} - E(\hat{z}_{i+1})}{Var(\hat{z}_{i+1})+\epsilon}
 {{< math_block >}}
 \mathrm{minimize} \quad \frac{1}{m}\sum_i^m{l(h_{w_{1:L}}(x^{(i)}, y^{(i)}))}+\frac{\lambda}{2}\sum_{i=1}^L{||w_i||_F^2}
 {{< /math_block >}}
-其中，$||w_i||_F{{< math_block >}}
-是Frobenius范数，其表示矩阵每个元素的平方和的平方根。
+其中，$||w_i||_F$是Frobenius范数，其表示矩阵每个元素的平方和的平方根。
 
 得益于这里的系数是$1/2$，在对$w_i$求导时正则项恰好为$\lambda w_i$。梯度更新的公式相应变为：
+{{< math_block >}}
+W_i :=(1-\alpha \lambda)W_i-\alpha \nabla \frac{1}{m}l
 {{< /math_block >}}
 
-W_i :=(1-\alpha \lambda)W_i-\alpha \nabla \frac{1}{m}l
-
-{{< math_block >}}
 注意，引入l2正则化后，每轮迭代都会将参数缩小至原来的$1-\alpha \lambda$。很多地方不将l2正则化作为损失函数的一部分，而是将其作为优化器的一部分，即直接将参数进行缩小，这种方法被称为weight decay，显然二者是等价的。
 
 另外一种正则化方法是dropout，其思想是在训练过程中随机地将一些激活层的输出置为0，并对其它输出放大，以确保整层输出的数学期望不变，形式化表示为：
-{{< /math_block >}}
-
+{{< math_block >}}
 \begin{align*}  
 \hat{z}_{i+1} &= \sigma_i(W^T_i z_i)+b_i\\  
 (z_{i+1})_j &=  
@@ -882,13 +879,11 @@ W_i :=(1-\alpha \lambda)W_i-\alpha \nabla \frac{1}{m}l
 0 &\text{以概率}p  
 \end{cases}  
 \end{align*}
-
-$$
+{{< /math_block >}}
 在推理时，则不需要进行dropout。
 
 直观地说，dropout能够提升模型在激活层部分缺失时进行推理的能力，但显然这一能力没什么卵用。另一种解释是dropout提升了模型训练过程中的随机性，类似SGD。
 
-谢谢你的回答！我才理解为啥要实现`LogSumExp`和“数值稳定”的含义。您推到的反向传播公式我理解了，但具体到数值稳定版本的`LogSumExp`，就是将您给出的公式中的$z_i$使用$z_i - \max z$替代，那梯度公式就变成了$\exp (z_i -\max z - \text{LogSumExp})$
 
 # Lecture 10: Convolutional Networks
 ## Convolutional operators in deep networks
@@ -908,9 +903,9 @@ $$
 在深度学习中，输入和隐藏层都很少是一个1D的矩阵，一般而言，其是由多个通道的。例如，一张彩色图片由RGB三通道组成，而中间的隐藏层，通常会有比较大的通道数，如下图所示：
 ![image.png](https://pics.zhouxin.space/202407251015471.png?x-oss-process=image/quality,q_90/format,webp)
 记卷积层的输入$x\in \mathbb{R}^{h\times w \times c_{in}}$，输出$z\in \mathbb{R}^{h\times w \times c_{out}}$。从上图可以发现，卷积输出的某个通道，都是由输入在同一个局部的所有通道共同决定的，因此，卷积核$W\in \mathbb{R}^{c_{in}\times c_{out}\times k \times k}$，卷积过程可以形式化表示为：
-$$
-z[:,:,s] = \sum_{r=1}^{c_{in}}x[:,:,r] \cdot W[r,s,:,:]
 {{< math_block >}}
+z[:,:,s] = \sum_{r=1}^{c_{in}}x[:,:,r] \cdot W[r,s,:,:]
+{{< /math_block >}}
 关于多通道卷积，另外一种更符合直觉的理解是将相同位置的各通道的组合看作是一个向量，即下图中，$x$每一格都是一个向量，$W$每一格都是$c_{out} \times c_{in}$的矩阵，卷积的输出由对应位置的$z$和$W$按矩阵乘法并求和得到。
 ![image.png](https://pics.zhouxin.space/202407251027480.png?x-oss-process=image/quality,q_90/format,webp)
 
@@ -936,41 +931,41 @@ z[:,:,s] = \sum_{r=1}^{c_{in}}x[:,:,r] \cdot W[r,s,:,:]
 正如前文所提到的，我们可以通过一系列矩阵向量乘法和求和运算来实现卷积操作，但这么做效率太低了，我们的计算图上有很多中间节点，这些中间变量将消耗大量的内存空间。因此，我们不应该使用微分库中的算子来计算卷子，而是将其作为一个算子来实现，并手动计算其微分。
 
 首先定义卷积操作：
-{{< /math_block >}}
-z = \operatorname{conv}(x,W)
 {{< math_block >}}
+z = \operatorname{conv}(x,W)
+{{< /math_block >}}
 $z$的梯度怎么与adjoints乘呢？这是个问题。$z$的梯度有以下二者：$\frac{\partial z}{\partial x}$和$\frac{\partial z}{\partial W}$，从形式上看，他们是3阶张量初以四阶张量，相当复杂。
 
 首先考虑最简单的矩阵和向量相乘的情况，即：
-{{< /math_block >}}
+{{< math_block >}}
 z = Wx
-{{< math_block >}}
-那么$z$对$x$的导数就是$W$，即其与adjoint的乘法计算公式为：
 {{< /math_block >}}
-W^T\bar{v}
+那么$z$对$x$的导数就是$W$，即其与adjoint的乘法计算公式为：
 {{< math_block >}}
+W^T\bar{v}
+{{< /math_block >}}
 也就是说如果在前向传播中我们计算一个矩阵和向量的乘积，那么在反向传播中，我们要计算这个矩阵的转置和adjoint的乘积。那对于卷积来说，它的“转置”是什么呢？
 
 - 将卷积视为矩阵运算I
 以1d卷积为例，我们考虑如下的一个卷积运算，其中每个格子都是一个向量或者矩阵。
 ![image.png](https://pics.zhouxin.space/202407251428228.png?x-oss-process=image/quality,q_90/format,webp)
 将上面这个矩阵运算展开，可以得到：
-{{< /math_block >}}
+{{< math_block >}}
 \begin{bmatrix}z_1\\z_2\\z_3\\z_4\\z_5\end{bmatrix}=x*w=\begin{bmatrix}w_2&w_3&0&0&0\\w_1&w_2&w_3&0&0\\0&w_1&w_2&w_3&0\\0&0&w_1&w_2&w_3\\0&0&0&w_1&w_2\end{bmatrix}\begin{bmatrix}x_1\\x_2\\x_3\\x_4\\x_5\end{bmatrix}
-{{< math_block >}}
+{{< /math_block >}}
 有了$\hat{W}$，我们可以很容易地写出$\hat{W}^T$,即：
-{{< /math_block >}}
+{{< math_block >}}
 \hat W^T=\begin{bmatrix}w_2&w_1&0&0&0\\w_3&w_2&w_1&0&0\\0&w_3&w_2&w_1&0\\0&0&w_3&w_2&w_1\\0&0&0&w_3&w_2\end{bmatrix}
-{{< math_block >}}
-不难发现，这个算子实际上是$[w_3, w_2, w_1]$这个卷积核，即原始卷积核翻转后的卷积核。也就是说，梯度和adjoint的乘积可以表示为：
 {{< /math_block >}}
-\hat{v}\frac{\partial \operatorname{conv}(x,w)}{\partial x} = \operatorname{conv}(\hat{v},\operatorname{flip}(w))
+不难发现，这个算子实际上是$[w_3, w_2, w_1]$这个卷积核，即原始卷积核翻转后的卷积核。也就是说，梯度和adjoint的乘积可以表示为：
 {{< math_block >}}
+\hat{v}\frac{\partial \operatorname{conv}(x,w)}{\partial x} = \operatorname{conv}(\hat{v},\operatorname{flip}(w))
+{{< /math_block >}}
 - 将卷积视为矩阵运算II
 接下来我们考虑卷积对于参数$w$的导数。同样，我们将矩阵运算展开，可以得到：
-{{< /math_block >}}
+{{< math_block >}}
 \begin{bmatrix}z_1\\z_2\\z_3\\z_4\\z_5\end{bmatrix}=x*w=\begin{bmatrix}0&x_1&x_2\\x_1&x_2&x_3\\x_2&x_3&x_4\\x_3&x_4&x_5\\x_4&x_5&0\end{bmatrix}\begin{bmatrix}w_1\\w_2\\w_3\end{bmatrix}
-$$
+{{< /math_block >}}
 相比矩阵运算I，我们构造出的$\hat{X}$矩阵是一个密集矩阵，在实现卷积算子时，我们常常采用这个方案来运算。这个$\hat{X}$矩阵被称为“im2col”矩阵（image to column）。
 
 # Lecture 11: Hardware acceleration
@@ -1118,9 +1113,9 @@ for (int i = 0; i < n/b1; ++i) {
 ```
 
 上述代码的数据加载开销是：
-$$
+{{< math_block >}}
 speed_{l1}\cdot(\frac{n^3}{v_2}+\frac{n^3}{v1})+speed_{dram}\cdot(n^2+\frac{n^3}{b_1})
-$$
+{{< /math_block >}}
 
 # Lecture 12: GPU acceleration
 ## GPU programming

@@ -4,7 +4,7 @@ tags:
   - CUDA
   - 深度学习系统
 date: 2024-06-06T13:28:00+08:00
-lastmod: 2024-07-24T18:25:00+08:00
+lastmod: 2024-08-13T12:46:00+08:00
 publish: true
 dir: notes
 slug: notes on cmu 10-414 assignments
@@ -413,7 +413,7 @@ def topo_sort_dfs(node, visited: dict, topo_order):
 
 - `autograd.py` 文件最后一部分提供了一个助手函数 `sum_node_list(node_list)`，用于在不创造冗余节点的情况下，对一系列 node 求和，对应伪代码中对 $\overline{v_i}$ 求和的部分；
 - 只有存在输入的节点才要计算梯度，初始 input 节点是没法计算梯度的，要进行判断；
-- `node.op.gradient` 返回值类型未 `Tuple | Tensor`，要分类处理。
+- ~~`node.op.gradient` 返回值类型为 `Tuple | Tensor`，要分类处理。~~`node.op.gradient_as_tuple` 辅助函数可确保返回类型为 tuple。
 
 在写代码之前，最好复习一遍理论；在 debug 的过程中，可以自己画一下计算图，会有奇效。反向模式 AD 具体实现为：
 
@@ -1470,6 +1470,366 @@ def train_mnist(
 ## hw2 小结
 
 到这里，hw2 就已经完结啦。拖拖拖，拖了一个月才做完，本课程的 test 不是很严格，在 Debug hw2 的过程中发现了不少 hw1 中的错误。遇到问题除了自己调试，也建议参考一下别人的实现，能够提升找到问题所在的效率。
+
+# hw3
+
+在本次实验中，我们将构建一个简单的底层库，用于实现 `NDArray`。之前我们是用 `NunPy` 来实现，这次我们将手动实现该 CPU 和 GPU 版本的底层库，并且不调用现有的高度优化的矩阵乘法或其他操作代码。
+
+## Part 1: Python array operations
+
+第一个部分是通过 Python 代码修改 `strides`、`shape`、`offset` 字段来实现一些操作，由于不涉及底层，使用 Python 来实现这些方法效率已经够高了。
+
+在实现前，先浏览一遍 `ndarray.py`，其提供大量辅助函数以简化实现过程。
+
+- reshape  
+reshape 操作就是按照另一种方式来解析内存中的连续一维数据。代码骨架提供了 `NDArray.as_strided` 方法将一个 `NDArray` 转换为指定 shape 和 strides，还有 `NDArray.compact_strides` 方法根据 shape 生成紧密排列情况下的 strides。
+
+使用以上辅助函数后，reshape 的实现就相当简单：
+
+```python
+def reshape(self, new_shape):
+		assert prod(self.shape) == prod(new_shape), "Product of shapes must be equal"
+	assert self.is_compact(), "Matrix must be compact"
+	return self.as_strided(new_shape, NDArray.compact_strides(new_shape))
+```
+
+- permute  
+permute 操作指的是对 `NDArray` 的轴进行重排列，例如原始轴排列的顺序是 `BHWC`，按照 (0,3,1,2) 方式重排列，得到的轴的顺序是 `BCHW`。重排后索引为 `[i, j, k, l]`，则重排前索引为 `[i, k, l, j]`。假设重排前的 strides 是 `m, n, p, q`，那么使用重排前索引得到元素下标为 `im+kn+lp+jq = im+jq+kn+lp`，即重排后索引对应的 strides 是 `m, q, n, p`，即将原始 strides 按照指定序列重排即可得到重排后对应的 strides。
+
+```python
+def permute(self, new_axes):
+	new_shape = tuple(self.shape[i] for i in new_axes)
+	new_strides = tuple(self.strides[i] for i in new_axes)
+	return NDArray.make(shape=new_shape, strides=new_strides, device=self.device, handle=self._handle, offset=self._offset)
+```
+
+- broadcast_to  
+广播操作很好理解，就是将元素在某些维度上复制，例如 `(1, 9, 8, 1) -> (9, 9, 8, 2)`，那么广播后索引为 `(m, n, p, q)` 在原始数组上的索引就是 `(0, n, p, 0)`，即广播的维度上 strides 置为 0 即可实现该效果。
+
+```python
+def broadcast_to(self, new_shape):
+	assert all(
+		new_shape[i] == self.shape[i] or self.shape[i] == 1
+		for i in range(len(self.shape))
+	), "Invalid broadcast shape"
+	new_strides = tuple(
+		self.strides[i] if self.shape[i] == new_shape[i] else 0 for i in range(len(self.shape))
+	)
+	return self.compact().as_strided(new_shape, new_strides)
+```
+
+- \_\_getitem\_\_  
+getitem 用于获取制定索引的元素，并以 `NDArray` 的形式返回。这里需要注意的是索引都是 `slice` 对象，代码已完成了对索引的预处理，保证所有的索引都是标准 `slice`，即其 `start`、`stop`、`step` 属性都存在，且在对应 shape 范围内。
+
+结果的 shape 计算比较简单，计算每个维度上的切片包含几个元素即可。strides 用于根据索引计算索引元素在一维数组中的下标，如果该维度上切片步长不为 1，那相当于每次都要跳过几个元素来访问下个元素，定量计算不难发现，新的 strides 就等于该维度上 `slice.step` 乘上对应的 strides。
+
+接下来计算 `offset`，由于切片中存在 `start` 值，因此如果待访问的索引存在某个维度上索引值小于对应切片上的 `start` 值的，这个元素不应存在新的 `NDArray` 上。例如，切片在每个维度上的 `start` 值为 `(2, 3, 4, 5)`，那么原始索引 `(1, 3, 4, 5)` 或者 `(2, 3, 4, 1)` 都在切片后的首个元素之前，应该被 offset 覆盖。因此，offset 值等于每个维度上的 `slice.start` 乘上对应的 strides。
+
+```python
+def __getitem__(self, idxs):
+	...
+	### BEGIN YOUR SOLUTION
+	shape = tuple(max(0, (s.stop - s.start + s.step - 1) // s.step) for s in idxs)
+	strides = tuple(s.step * self.strides[i] for i, s in enumerate(idxs))
+	offset = reduce(operator.add, (s.start * self.strides[i] for i, s in enumerate(idxs)))
+	return NDArray.make(shape, strides, device=self.device, handle=self._handle, offset=offset)
+	### END YOUR SOLUTION
+```
+
+## Part 2: CPU Backend - Compact and setitem
+
+在本部分中，我们将实现 CPU 版本的 `compact` 和 `setitem`，前者用于在内存中创建一份紧密排列的数据副本，后者用于在内存中根据给定的数据赋值。
+
+二者有个共同点，就是涉及到可变循环展开。即，由于给定 `NDArray` 的维度数量是不确定的，无法通过 n 重循环对数据进行遍历。此处我采用的思路是维护一个索引 `(0, 0, 0, ..., 0)`，每次手动在最后一位执行 +1 操作，当达到对应维度的 `shape` 值时则进位，直至最高位也向前进位，说明遍历完毕。
+
+这里我定义了两个辅助函数 `bool next_index(std::vector<int32_t>& index, const std::vector<int32_t>& shape)` 和 `size_t index_to_offset(const std::vector<int32_t>& index, const std::vector<int32_t>& strides, const size_t offset)`，分别用于遍历索引和将索引转换为下标。二者实现为：
+
+```cpp
+bool next_index(std::vector<int32_t>& index, const std::vector<int32_t>& shape) {
+  /**
+   * Increment the index by one, and return true if the index is still valid
+   * 
+   * Args:
+   *  index: current index
+   *  shape: shape of the array
+   *  
+   * Returns:
+   *  true if the index is still valid, false otherwise
+   */
+  if(index.size() == 0){
+    return false;
+  }
+  index[index.size()-1]++;
+  for(int i=index.size()-1; i>=0; i--){
+    if(index[i] >= shape[i]){
+      index[i] = 0;
+      if(i > 0){
+        index[i-1]++;
+      }
+      else {
+        return false;
+      }
+    }
+    else {
+      return true;
+    }
+  }
+}
+
+size_t index_to_offset(const std::vector<int32_t>& index, const std::vector<int32_t>& strides, const size_t offset) {
+  /**
+   * Convert an index to an offset
+   * 
+   * Args:
+   *  index: index to convert
+   *  strides: strides of the array
+   *  offset: offset of the array
+   *  
+   * Returns:
+   *  offset of the index
+   */
+  size_t res = offset;
+  for(int i=0; i<index.size(); i++){
+    res += index[i] * strides[i];
+  }
+  return res;
+} 
+```
+
+- compact  
+compact 函数只要在预分配内存的 `out` 上将每个位置的值写入即可。鉴于 `out` 在内存中是连续的，可以使用 `out_index++` 来逐个访问，原始数据则通过上述两个辅助函数进行访问：
+
+```cpp
+void Compact(const AlignedArray& a, AlignedArray* out, std::vector<int32_t> shape, std::vector<int32_t> strides, size_t offset) {
+  /// BEGIN SOLUTION
+  auto a_index = std::vector<int32_t>(shape.size(), 0);
+  for (int out_index = 0; out_index < out->size; out_index++) {
+    size_t a_offset = index_to_offset(a_index, strides, offset);
+    out->ptr[out_index] = a.ptr[a_offset];
+    next_index(a_index, shape);
+  }
+  /// END SOLUTION
+}
+```
+
+- setitem  
+setitem 按照是否为标量有两个版本，但都挺简单，利用好两个辅助函数逐个访问对应下标即可：
+
+```cpp
+void EwiseSetitem(const AlignedArray& a, AlignedArray* out, std::vector<int32_t> shape, std::vector<int32_t> strides, size_t offset) {
+  /// BEGIN SOLUTION
+  auto out_index = std::vector<int32_t>(shape.size(), 0);
+  for (int a_index = 0; a_index < a.size; a_index++) {
+    size_t out_offset = index_to_offset(out_index, strides, offset);
+    out->ptr[out_offset] = a.ptr[a_index];
+    next_index(out_index, shape);
+  }
+  /// END SOLUTION
+}
+
+void ScalarSetitem(const size_t size, scalar_t val, AlignedArray* out, std::vector<int32_t> shape, td::vector<int32_t> strides, size_t offset) {
+  /// BEGIN SOLUTION
+  auto out_index = std::vector<int32_t>(shape.size(), 0);
+  for (int i = 0; i < size; i++) {
+    size_t out_offset = index_to_offset(out_index, strides, offset);
+    out->ptr[out_offset] = val;
+    next_index(out_index, shape);
+  }
+  /// END SOLUTION
+}
+```
+
+## Part 3: CPU Backend - Elementwise and scalar operations
+
+在本 Part 中，我们将完成一些非常简单的算子的 CPU 版本，本任务主要是用于熟悉在 pybind 中注册 cpp 函数的流程。文档中提到，鼓励使用模板、宏等简化实现。
+
+我没有为每个算子都写一个显式函数声明和定义，我首先实现了 `void EwiseOp(const AlignedArray& a, const AlignedArray& b, AlignedArray* out, std::function<scalar_t(scalar_t, scalar_t)> op)` 和 `void ScalarOp(const AlignedArray& a, scalar_t val, AlignedArray* out, std::function<scalar_t(scalar_t, scalar_t)> op)`，分别用于逐元素和统一执行函数 `op`，通过传入不同的函数 `op` 可以实现不同的操作。
+
+```cpp
+void EwiseOp(const AlignedArray& a, const AlignedArray& b, AlignedArray* out, std::function<scalar_t(scalar_t, scalar_t)> op) {
+  /**
+   * Element-wise operation on two arrays
+   *
+   * Args:
+   *   a: first array
+   *   b: second array
+   *   out: output array
+   *   op: operation to perform
+   */
+  for (size_t i = 0; i < a.size; i++) {
+    out->ptr[i] = op(a.ptr[i], b.ptr[i]);
+  }
+}
+
+void ScalarOp(const AlignedArray& a, scalar_t val, AlignedArray* out, std::function<scalar_t(scalar_t, scalar_t)> op) {
+  /**
+   * Element-wise operation on an array and a scalar
+   *
+   * Args:
+   *   a: array
+   *   val: scalar
+   *   out: output array
+   *   op: operation to perform
+   */
+  for (size_t i = 0; i < a.size; i++) {
+    out->ptr[i] = op(a.ptr[i], val);
+  }
+}
+```
+
+再通过 lambda 表达式对上面这两个函数部分实例化（柯里化），以便其只接受两个参数 `a, b` 并在 pybind 中注册。
+
+举个栗子，如果想注册一个按元素乘法，那么完整的代码为：
+
+```cpp
+m.def("ewise_mul", [](const AlignedArray& a, const AlignedArray& b, AlignedArray* out) {
+    EwiseOp(a, b, out, std::multiplies<scalar_t>());
+});
+
+```
+
+从外向内看，`m.def` 用于在 pybind 中注册一个方法，该方法名由第一个参数指定，即 `ewise_mul`，第二个参数用于指定对应的 cpp 函数，这里可以接受函数指针、匿名函数等。注意，在 python 我们调用 `ewise_mul`，只传入两个 `NDArray`，因此我们需要对接受三个参数的 `EwiseOp` 柯里化，即传入 `std::multiplies<scalar_t>()` 给 `EwiseOp`，并将其封装为一个匿名函数。
+
+注册方法的这一步每次都要创建一个匿名函数，有点复杂了，这一步也能抽象为一个宏，即：
+
+```cpp
+  #define REGISTER_EWISW_OP(NAME, OP) \
+    m.def(NAME, [](const AlignedArray& a, const AlignedArray& b, AlignedArray* out) { \
+      EwiseOp(a, b, out, OP); \
+    });
+
+  #define REGISTER_SCALAR_OP(NAME, OP) \
+    m.def(NAME, [](const AlignedArray& a, scalar_t val, AlignedArray* out) { \
+      ScalarOp(a, val, out, OP); \
+    });
+  #define REGISTER_SINGLE_OP(NAME, OP) \
+    m.def(NAME, [](const AlignedArray& a, AlignedArray* out) { \
+      for (size_t i = 0; i < a.size; i++) { \
+        out->ptr[i] = OP(a.ptr[i]); \
+      } \
+    });
+```
+
+上述三个宏，分别用于注册按元素、按标量的双目运算符，和单目运算符在 pybind 中的注册。
+
+应用这些宏，注册所有指定的方法：
+
+```cpp
+  REGISTER_EWISW_OP("ewise_mul", std::multiplies<scalar_t>());
+  REGISTER_SCALAR_OP("scalar_mul", std::multiplies<scalar_t>());
+  REGISTER_EWISW_OP("ewise_div", std::divides<scalar_t>());
+  REGISTER_SCALAR_OP("scalar_div", std::divides<scalar_t>());
+  REGISTER_SCALAR_OP("scalar_power", static_cast<scalar_t(*)(scalar_t, scalar_t)>(std::pow));
+  REGISTER_EWISW_OP("ewise_maximum", static_cast<scalar_t(*)(scalar_t, scalar_t)>(std::fmax));
+  REGISTER_SCALAR_OP("scalar_maximum", static_cast<scalar_t(*)(scalar_t, scalar_t)>(std::fmax));
+  REGISTER_EWISW_OP("ewise_eq", std::equal_to<scalar_t>());
+  REGISTER_SCALAR_OP("scalar_eq", std::equal_to<scalar_t>());
+  REGISTER_EWISW_OP("ewise_ge", std::greater_equal<scalar_t>());
+  REGISTER_SCALAR_OP("scalar_ge", std::greater_equal<scalar_t>());
+  REGISTER_SINGLE_OP("ewise_log", std::log);
+  REGISTER_SINGLE_OP("ewise_exp", std::exp);
+  REGISTER_SINGLE_OP("ewise_tanh", std::tanh);
+
+```
+
+注意，其中 `std::pow` 等有多个重载版本，通过 `static_cast` 关键字可以指定版本。
+
+## Part 4: CPU Backend - Reductions
+
+这里要实现两个归约算子 `max` 和 `sum`，为了简化实现，这里只对单个维度进行归约。即便在单个维度上，想要实现归约运算也是相当困难的，因此本任务还进行了简化：在调用归约算子前会将待归约维度重排到最后一个维度上，并在调用结束后自动恢复，因此我们只要实现对最后一个维度的归约运算。
+
+经过一系列简化操作，这两个算子实现起来有点过于简单了：对连续的 `reduce_size` 个元素进行 max/sum 运算作为输出的新元素即可，最后记得在 pybind 中注册这两个方法：
+
+```cpp
+void ReduceMax(const AlignedArray& a, AlignedArray* out, size_t reduce_size) {
+  /// BEGIN SOLUTION
+  for(size_t i = 0; i < out->size; i++){
+    out->ptr[i] = a.ptr[i*reduce_size];
+    for(size_t j = 1; j < reduce_size; j++){
+      out->ptr[i] = std::max(out->ptr[i], a.ptr[i*reduce_size + j]);
+    }
+  }
+  /// END SOLUTION
+}
+
+void ReduceSum(const AlignedArray& a, AlignedArray* out, size_t reduce_size) {
+  /// BEGIN SOLUTION
+  for(size_t i = 0; i < out->size; i++){
+    out->ptr[i] = 0;
+    for(size_t j = 0; j < reduce_size; j++){
+      out->ptr[i] += a.ptr[i*reduce_size + j];
+    }
+  }
+  /// END SOLUTION
+}
+```
+
+## Part 5: CPU Backend - Matrix multiplication
+
+在本模块中，我们将实现矩阵乘法。
+
+- Matmul  
+首先要实现的是三重循环版本的矩阵乘法，外层两个循环依次为 `out` 的行和列，在开始实现之前，记得对 `out` 数组进行初始化！
+
+```cpp
+void Matmul(const AlignedArray& a, const AlignedArray& b, AlignedArray* out, uint32_t m, uint32_t n,
+            uint32_t p) {
+  for(uint32_t i = 0; i < m*p; i++){
+    out->ptr[i] = 0;
+  }
+  for (uint32_t i=0; i<m; i++) {
+    for (uint32_t j=0; j<p; j++) {
+      for (uint32_t k=0; k<n; k++) {
+        out->ptr[i*p + j] += a.ptr[i*n + k] * b.ptr[k*p + j];
+      }
+    }
+  }
+}
+```
+
+- AlignedDot  
+本函数的作用是计算两个 `TILE*TILE` 的矩阵的矩阵乘法计算结果，并将其加到 `out` 的对应位置。我们是用三重循环来通过代码实现，而在编译时，其将被优化为向量计算。
+
+```cpp
+inline void AlignedDot(const float* __restrict__ a,
+                       const float* __restrict__ b,
+                       float* __restrict__ out) {
+
+  a = (const float*)__builtin_assume_aligned(a, TILE * ELEM_SIZE);
+  b = (const float*)__builtin_assume_aligned(b, TILE * ELEM_SIZE);
+  out = (float*)__builtin_assume_aligned(out, TILE * ELEM_SIZE);
+
+  /// BEGIN SOLUTION
+
+  for (uint32_t i=0; i<TILE; i++) {
+    for (uint32_t j=0; j<TILE; j++) {
+      for (uint32_t k=0; k<TILE; k++) {
+        out[i*TILE + j] += a[i*TILE + k] * b[k*TILE + j];
+      }
+    }
+  }
+  /// END SOLUTION
+}
+```
+
+- MatmulTiled  
+这里通过分块来实现矩阵乘法，分块的原理和分块加速的原因在 Lecture 12 都讲过了，此处不再赘述，笔记在：[《CMU 10-414 deep learning system》学习笔记 > Lecture 12]({{< relref "%E3%80%8ACMU%2010-414%20deep%20learning%20system%E3%80%8B%E5%AD%A6%E4%B9%A0%E7%AC%94%E8%AE%B0.md" >}}#lecture-12)。
+
+```cpp
+void MatmulTiled(const AlignedArray& a, const AlignedArray& b, AlignedArray* out, uint32_t m,
+                 uint32_t n, uint32_t p) {
+  for(uint32_t i=0; i<m*p; i++){
+    out->ptr[i] = 0;
+  }
+  for (uint32_t i=0; i<m/TILE; i++) {
+    for (uint32_t j=0; j<p/TILE; j++) {
+      for (uint32_t k=0; k<n/TILE; k++) {
+        AlignedDot(a.ptr + (i*n/TILE + k)*TILE*TILE, b.ptr + (k*p/TILE + j)*TILE*TILE, out->ptr + (i*p/TILE + j)*TILE*TILE);
+      }
+    }
+  }
+}
+```
 
 # 参考文档
 

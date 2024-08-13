@@ -4,7 +4,7 @@ tags:
   - CUDA
   - 深度学习系统
 date: 2024-05-28T12:24:00+08:00
-lastmod: 2024-07-30T10:46:00+08:00
+lastmod: 2024-08-13T08:21:00+08:00
 publish: true
 dir: notes
 slug: notes on cmu 10-414 deep learning system
@@ -357,13 +357,15 @@ f(\theta-\delta) = f(\theta)+f^\prime (\theta)\delta-\frac{1}{2}f^{\prime \prime
 整个梯度计算过程如下，在此过程中应用到了具体函数的求导公式：
 {{< math_block >}}
 \begin{align*}  
-&\dot\nu_{1} =1 \\  
-&\dot\nu_{2} =0 \\  
-&\dot{\nu}_{3} =v_{1}/v_{1}=0.5 \\  
-&\dot{\nu}_{4} =\hat{v}_{1}v_{2}+v_{2}v_{1}=1\times5+0\times2=5 \\  
-&\dot\nu_{5} =\dot{v_{2}}\cos v_{2}=0\times\cos5=0 \\  
-&\dot{\nu}_{6} =v_{3}+v_{4}=0.5+5=5.5 \\  
-&\dot{\nu}_{7} =\dot{v_{6}}-\dot{v_{5}}=5.5-0=5.5  
+&x_1 = 2\\  
+&x_2 = 5\\  
+&\dot v_{1} =1 \\  
+&\dot v_{2} =0 \\  
+&\dot{v}_{3} =\dot v_{1}/v_{1}=0.5 \\  
+&\dot{v}_{4} =\dot{v}_{1}v_{2}+\dot v_{2}v_{1}=1\times5+0\times2=5 \\  
+&\dot v{5} =\dot{v_{2}}\cos v_{2}=0\times\cos5=0 \\  
+&\dot{v}_{6} =\dot v_{3}+\dot v_{4}=0.5+5=5.5 \\  
+&\dot{v}_{7} =\dot{v_{6}}-\dot{v_{5}}=5.5-0=5.5  
 \end{align*}
 {{< /math_block >}}
 
@@ -1292,6 +1294,8 @@ for(int j = 0; j < L * S / nthreads; ++j) {
 
 # Lecture 13: Hardware Acceleration Implemetation
 这节是实验课，在这节课中，我们将学习needle库中CPU和GPU底端具体实现的代码骨架。
+
+这节课不做笔记，本节课内容可通过完成hw3学习。
 
 
 

@@ -4,7 +4,7 @@ tags:
   - CUDA
   - 深度学习系统
 date: 2024-06-06T13:28:00+08:00
-lastmod: 2024-08-13T12:46:00+08:00
+lastmod: 2024-08-25T13:42:00+08:00
 publish: true
 dir: notes
 slug: notes on cmu 10-414 assignments
@@ -1830,6 +1830,564 @@ void MatmulTiled(const AlignedArray& a, const AlignedArray& b, AlignedArray* out
   }
 }
 ```
+
+## Part 6: GPU Backend - Compact and setitem
+
+从本 Part 开始，我们要写 CUDA 代码了，第一次接触 CUDA 编程的同学可以看一下这个不到 5 小时的教程 [CUDA编程基础入门系列（持续更新）\_哔哩哔哩\_bilibili](https://www.bilibili.com/video/BV1sM4y1x7of/?vd_source=1310bba71aaa59915676f56cad6e29d8)，快速入门。
+
+本 Part 中，我们将实现 `compact` 和 `setitem` 算子。有了之前实现 CPU 版本的经验，先写一个将逻辑索引转换为物理索引的辅助函数：
+
+```cpp
+__device__ size_t indexToMemLocation(size_t index, CudaVec shape, CudaVec strides, size_t offset){
+  size_t ret = offset;
+  for(int i=shape.size-1; i>=0; i--){
+    ret += (index % shape.data[i]) * strides.data[i];
+    index /= shape.data[i];
+  }
+  return ret;
+}
+```
+
+`CompactKernel` 根据文档，其作用是将 `a` 中逻辑下标为 `gid` 的数据拷贝到 `out[gid]` 处，注意判断 `gid` 是否越界，即：
+
+```cpp
+__global__ void CompactKernel(const scalar_t* a, scalar_t* out, size_t size, CudaVec shape,
+                              CudaVec strides, size_t offset) {
+  size_t gid = blockIdx.x * blockDim.x + threadIdx.x;
+
+  if(gid >= size)
+    return;
+  size_t memLocation = indexToMemLocation(gid, shape, strides, offset);
+  out[gid] = a[memLocation];
+}
+```
+
+两个 setitem 算子照猫画虎，比较简单，直接贴代码：
+
+```cpp
+__global__ void EwiseSetitemKernel(const scalar_t* a, scalar_t* out, size_t size, CudaVec shape, CudaVec strides,
+                              size_t offset) {
+  /**
+   * 
+   * Args:
+   *   a: _compact_ array whose items will be written to out
+   *   out: non-compact array whose items are to be written
+   *   shape: shapes of each dimension for a and out
+   *   strides: strides of the *out* array (not a, which has compact strides)
+   *   offset: offset of the *out* array (not a, which has zero offset, being compact)
+   */
+  size_t gid = blockIdx.x * blockDim.x + threadIdx.x;
+  if (gid < size){
+    size_t memLocation = indexToMemLocation(gid, shape, strides, offset);
+    out[memLocation] = a[gid];
+  }
+  
+  
+}
+
+
+void EwiseSetitem(const CudaArray& a, CudaArray* out, std::vector<int32_t> shape,
+                  std::vector<int32_t> strides, size_t offset) {
+  /**
+   * Set items in a (non-compact) array using CUDA.  Yyou will most likely want to implement a
+   * EwiseSetitemKernel() function, similar to those above, that will do the actual work.
+   * 
+   * Args:
+   *   a: _compact_ array whose items will be written to out
+   *   out: non-compact array whose items are to be written
+   *   shape: shapes of each dimension for a and out
+   *   strides: strides of the *out* array (not a, which has compact strides)
+   *   offset: offset of the *out* array (not a, which has zero offset, being compact)
+   */
+  /// BEGIN SOLUTION
+  CudaDims dim = CudaOneDim(a.size);
+  EwiseSetitemKernel<<<dim.grid, dim.block>>>(a.ptr, out->ptr, a.size, VecToCuda(shape),
+                                         VecToCuda(strides), offset);
+  /// END SOLUTION
+}
+
+__global__ void ScalarSetitemKernel(size_t size, scalar_t val, scalar_t* out, CudaVec shape, 
+                                    CudaVec strides, size_t offset){
+  size_t gid = blockIdx.x * blockDim.x + threadIdx.x;
+  if (gid < size){
+    size_t memLocation = indexToMemLocation(gid, shape, strides, offset);
+    out[memLocation] = val;
+  }
+}
+
+void ScalarSetitem(size_t size, scalar_t val, CudaArray* out, std::vector<int32_t> shape,
+                   std::vector<int32_t> strides, size_t offset) {
+  /**
+   * Set items is a (non-compact) array
+   * 
+   * Args:
+   *   size: number of elements to write in out array (note that this will note be the same as
+   *         out.size, because out is a non-compact subset array);  it _will_ be the same as the 
+   *         product of items in shape, but covenient to just pass it here.
+   *   val: scalar value to write to
+   *   out: non-compact array whose items are to be written
+   *   shape: shapes of each dimension of out
+   *   strides: strides of the out array
+   *   offset: offset of the out array
+   */
+  /// BEGIN SOLUTION
+  CudaDims dim = CudaOneDim(size);
+  ScalarSetitemKernel<<<dim.grid, dim.block>>>(size, val, out->ptr, VecToCuda(shape),
+                                         VecToCuda(strides), offset);
+  /// END SOLUTION
+}
+
+////////////////////////////////////////////////////////////////////////////////
+// Elementwise and scalar operations
+////////////////////////////////////////////////////////////////////////////////
+
+__global__ void EwiseAddKernel(const scalar_t* a, const scalar_t* b, scalar_t* out, size_t size) {
+  size_t gid = blockIdx.x * blockDim.x + threadIdx.x;
+  if (gid < size) out[gid] = a[gid] + b[gid];
+}
+
+void EwiseAdd(const CudaArray& a, const CudaArray& b, CudaArray* out) {
+  /**
+   * Add together two CUDA array
+   */
+  CudaDims dim = CudaOneDim(out->size);
+  EwiseAddKernel<<<dim.grid, dim.block>>>(a.ptr, b.ptr, out->ptr, out->size);
+}
+
+```
+
+## Part 7: CUDA Backend - Elementwise and scalar operations
+
+本 Part 将实现一系列比较简单的单目、双目运算符，重点讲一下如何精简代码。
+
+在 CPU 版本中，我们通过 `std::function` 动态传入 `Op` 来实现不同的运算，但在 CUDA 的核函数中是不支持 `std` 的，因此我们改为通过模板来实现。
+
+分别为逐元素运算和标量运算各写一个模板核函数：
+
+```cpp
+template <typename Op>
+__global__ void EwiseKernel(const scalar_t* a, const scalar_t* b, scalar_t* out, size_t size, Op op) {
+    size_t gid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (gid < size) out[gid] = op(a[gid], b[gid]);
+}
+
+template <typename Op>
+__global__ void ScalarKernel(const scalar_t* a, scalar_t val, scalar_t* out, size_t size, Op op) {
+    size_t gid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (gid < size) out[gid] = op(a[gid], val);
+}
+```
+
+CUDA 核函数中调用的其它函数必须也是核函数或者设备函数，因此我们还要为各个算子封装一个类，并重载 `()` 运算符，以便实例化上述两个模板核函数：
+
+```cpp
+struct Add {
+    __device__ scalar_t operator()(scalar_t x, scalar_t y) const { return x + y; }
+};
+
+struct Mul {
+    __device__ scalar_t operator()(scalar_t x, scalar_t y) const { return x * y; }
+};
+
+struct Div {
+    __device__ scalar_t operator()(scalar_t x, scalar_t y) const { return x / y; }
+};
+
+struct Maximum {
+    __device__ scalar_t operator()(scalar_t x, scalar_t y) const { return max(x, y); }
+};
+
+struct Eq {
+    __device__ scalar_t operator()(scalar_t x, scalar_t y) const { return x == y; }
+};
+
+struct Ge {
+    __device__ scalar_t operator()(scalar_t x, scalar_t y) const { return x >= y; }
+};
+
+struct Power {
+    scalar_t val;
+    Power(scalar_t v) : val(v) {}
+    __device__ scalar_t operator()(scalar_t x, scalar_t) const { return pow(x, val); }
+};
+```
+
+接下来定义主机端接口，以便注册到 pybind11 中：
+
+```cpp
+void EwiseMul(const CudaArray& a, const CudaArray& b, CudaArray* out) {
+    CudaDims dim = CudaOneDim(out->size);
+    EwiseKernel<<<dim.grid, dim.block>>>(a.ptr, b.ptr, out->ptr, out->size, Mul());
+}
+
+void ScalarMul(const CudaArray& a, scalar_t val, CudaArray* out) {
+    CudaDims dim = CudaOneDim(out->size);
+    ScalarKernel<<<dim.grid, dim.block>>>(a.ptr, val, out->ptr, out->size, Mul());
+}
+
+void EwiseDiv(const CudaArray& a, const CudaArray& b, CudaArray* out) {
+    CudaDims dim = CudaOneDim(out->size);
+    EwiseKernel<<<dim.grid, dim.block>>>(a.ptr, b.ptr, out->ptr, out->size, Div());
+}
+
+void ScalarDiv(const CudaArray& a, scalar_t val, CudaArray* out) {
+    CudaDims dim = CudaOneDim(out->size);
+    ScalarKernel<<<dim.grid, dim.block>>>(a.ptr, val, out->ptr, out->size, Div());
+}
+
+void ScalarPower(const CudaArray& a, scalar_t val, CudaArray* out) {
+    CudaDims dim = CudaOneDim(out->size);
+    ScalarKernel<<<dim.grid, dim.block>>>(a.ptr, val, out->ptr, out->size, Power(val));
+}
+
+void EwiseMaximum(const CudaArray& a, const CudaArray& b, CudaArray* out) {
+    CudaDims dim = CudaOneDim(out->size);
+    EwiseKernel<<<dim.grid, dim.block>>>(a.ptr, b.ptr, out->ptr, out->size, Maximum());
+}
+
+void ScalarMaximum(const CudaArray& a, scalar_t val, CudaArray* out) {
+    CudaDims dim = CudaOneDim(out->size);
+    ScalarKernel<<<dim.grid, dim.block>>>(a.ptr, val, out->ptr, out->size, Maximum());
+}
+
+void EwiseEq(const CudaArray& a, const CudaArray& b, CudaArray* out) {
+    CudaDims dim = CudaOneDim(out->size);
+    EwiseKernel<<<dim.grid, dim.block>>>(a.ptr, b.ptr, out->ptr, out->size, Eq());
+}
+
+void ScalarEq(const CudaArray& a, scalar_t val, CudaArray* out) {
+    CudaDims dim = CudaOneDim(out->size);
+    ScalarKernel<<<dim.grid, dim.block>>>(a.ptr, val, out->ptr, out->size, Eq());
+}
+
+void EwiseGe(const CudaArray& a, const CudaArray& b, CudaArray* out) {
+    CudaDims dim = CudaOneDim(out->size);
+    EwiseKernel<<<dim.grid, dim.block>>>(a.ptr, b.ptr, out->ptr, out->size, Ge());
+}
+
+void ScalarGe(const CudaArray& a, scalar_t val, CudaArray* out) {
+    CudaDims dim = CudaOneDim(out->size);
+    ScalarKernel<<<dim.grid, dim.block>>>(a.ptr, val, out->ptr, out->size, Ge());
+}
+```
+
+上述是双目运算符的实现，接下来实现单目运算符。单目运算符也可以像双目一样通过模板实现，但 copilot 直接生成了对应代码，我也懒得改：
+
+```cpp
+__global__ void EwiseLogKernel(const scalar_t* a, scalar_t* out, size_t size) {
+    size_t gid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (gid < size) out[gid] = log(a[gid]);
+}
+
+void EwiseLog(const CudaArray& a, CudaArray* out) {
+    CudaDims dim = CudaOneDim(out->size);
+    EwiseLogKernel<<<dim.grid, dim.block>>>(a.ptr, out->ptr, out->size);
+}
+
+__global__ void EwiseExpKernel(const scalar_t* a, scalar_t* out, size_t size) {
+    size_t gid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (gid < size) out[gid] = exp(a[gid]);
+}
+
+void EwiseExp(const CudaArray& a, CudaArray* out) {
+  CudaDims dim = CudaOneDim(out->size);
+  EwiseExpKernel<<<dim.grid, dim.block>>>(a.ptr, out->ptr, out->size);
+}
+
+__global__ void EwiseTanhKernel(const scalar_t* a, scalar_t* out, size_t size) {
+    size_t gid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (gid < size) out[gid] = tanh(a[gid]);
+}
+
+void EwiseTanh(const CudaArray& a, CudaArray* out) {
+    CudaDims dim = CudaOneDim(out->size);
+    EwiseTanhKernel<<<dim.grid, dim.block>>>(a.ptr, out->ptr, out->size);
+}
+```
+
+最后，将本文件最后 `m.def` 开头的代码取消注释，将对应接口注册到 pybind11 中即可。
+
+## Part 8: CUDA Backend - Reductions
+
+本 Part 将实现两个规约算子 `sum` 和 `max`。
+
+和 CPU 版本一样，待归约的元素在内存中是连续排列的。在 CUDA 中，由每个线程负责一个规约任务，其负责的规约范围为 `[gid*size, min(gid*size+size, a_size)]`，其中 `size` 是单个线程负责规约的长度，`a_size` 是输入数据的长度。
+
+核函数中根据具体的规约算子，计算求和或者最大值即可：
+
+```cpp
+__global__ void ReduceMaxKernel(const scalar_t* a, scalar_t* out, size_t size, size_t a_size) {
+  /**
+   * 对a中连续`size`个元素进行规约
+   */
+  size_t gid = blockIdx.x * blockDim.x + threadIdx.x;
+  size_t start = gid * size;
+  size_t end = min(start + size, a_size);
+  if(start < end){
+    scalar_t max_val = a[start];
+    for(size_t i=start+1; i<end; i++){
+      max_val = max(max_val, a[i]);
+    }
+    out[gid] = max_val;
+  }
+}
+
+void ReduceMax(const CudaArray& a, CudaArray* out, size_t reduce_size) {
+  /**
+   * Reduce by taking maximum over `reduce_size` contiguous blocks.  Even though it is inefficient,
+   * for simplicity you can perform each reduction in a single CUDA thread.
+   * 
+   * Args:
+   *   a: compact array of size a.size = out.size * reduce_size to reduce over
+   *   out: compact array to write into
+   *   redice_size: size of the dimension to reduce over
+   */
+  /// BEGIN SOLUTION
+  CudaDims dim = CudaOneDim(out->size);
+  ReduceMaxKernel<<<dim.grid, dim.block>>>(a.ptr, out->ptr, reduce_size, a.size);
+  /// END SOLUTION
+}
+
+__global__ void ReduceSumKernel(const scalar_t* a, scalar_t* out, size_t size, size_t a_size) {
+  /**
+   * 对a中连续`size`个元素进行规约
+   */
+  size_t gid = blockIdx.x * blockDim.x + threadIdx.x;
+  size_t start = gid * size;
+  size_t end = min(start + size, a_size);
+  if(start >= end){
+    return;
+  }
+  out[gid] = 0; // 如果进行初始化，必须只有需要运行线程才能初始化，否则会越界修改数据
+  for(size_t i=start; i<end; i++){
+    out[gid] += a[i];
+  }
+}
+
+
+
+void ReduceSum(const CudaArray& a, CudaArray* out, size_t reduce_size) {
+  /**
+   * Reduce by taking summation over `reduce_size` contiguous blocks.  Again, for simplicity you 
+   * can perform each reduction in a single CUDA thread.
+   * 
+   * Args:
+   *   a: compact array of size a.size = out.size * reduce_size to reduce over
+   *   out: compact array to write into
+   *   redice_size: size of the dimension to reduce over
+   */
+  /// BEGIN SOLUTION
+  CudaDims dim = CudaOneDim(out->size);
+  ReduceSumKernel<<<dim.grid, dim.block>>>(a.ptr, out->ptr, reduce_size, a.size);
+  /// END SOLUTION
+}
+```
+
+## Part 9: CUDA Backend - Matrix multiplication
+
+这是最后一个任务，也是最难的一部分。正如文档中所说，想要实现一个矩阵乘法算子还是挺简单的，让每个线程负责一个结果的计算即可。但，如果想使用 cooperative fetching 和 block shared memory register tiling 技术，尤其是按照理论课中提到的伪代码来实现，则要困难得多。
+
+首先贴出理论课中提到的伪代码：
+
+```cpp
+__global__ void mm(float A[N][N], float B[N][N], float C[N][N]) {
+    __shared__ float sA[S][L], sB[S][L];
+    float c[V][V] = {0};
+    float a[V], b[V];
+    int yblock = blockIdx.y;
+    int xblock = blockIdx.x;
+
+    for (int ko = 0; ko < N; ko += S) {
+        __syncthreads();
+        // needs to be implemented by thread cooperative fetching
+        sA[:, :] = A[ko + S, yblock * L : yblock * L + L];
+        sB[:, :] = B[ko + S, xblock * L : xblock * L + L];
+        __syncthreads();
+
+        for (int ki = 0; ki < S; ++ki) {
+            a[:] = sA[ki, threadIdx.x * V + V];
+            b[:] = sB[ki, threadIdx.x * V + V];
+            for (int y = 0; y < V; ++y) {
+                for (int x = 0; x < V; ++x) {
+                    c[y][x] += a[y] * b[x];
+                }
+            }
+        }
+    }
+
+    int ybase = blockIdx.y * blockDim.y + threadIdx.y;
+    int xbase = blockIdx.x * blockDim.x + threadIdx.x;
+    C[ybase * V : ybase * V + V, xbase * V : xbase * V + V] = c[:, :];
+}
+```
+
+![image.png](https://pics.zhouxin.space/202408251127789.webp?x-oss-process=image/quality,q_90/format,webp)  
+如上图所示，我们要计算的是两个长度为 N 的方阵之间的乘法，结果矩阵 C 会被分块为 (L,L) 的子矩阵，每个 block 负责计算一个子矩阵。
+
+为了计算这个子矩阵，索引为 `block_x, block_y` 的 block 需要用到的数据为 `A'=A[L*block_x:L*block_x+L,:]` 和 `B'=B[:,L*block_x:L*block_x+L]`。A' 和 B' 可能比较大，因此在另一维度上按照长度 S 再次分为 N/S 块，分块后的 shape 分别为 (L,S) 和 (S,L)，二者的矩阵乘法结果的 shape 为 (L,L)，将 N/S 块累加即可得到该 block 负责的子矩阵的结果。
+
+后文将使用矩阵的 shape 来指代该矩阵。
+
+在计算单个 (L,S) 和 (S,L) 的乘法时，每个 block 都会将其对应的数据，即图中 A 和 B 的阴影部分，加载进 block 内线程共享的共享内存中。
+
+通过外积计算单个 (L,S) 和 (S,L) 的乘法，该算法简单说就是从 (L,S) 任取一列，从 (S,L) 中任取一行，进行外积运算。将各种组合方式的外积结果累加，即可实现矩阵乘法。
+
+单个外积运算由 block 内的线程共同完成，如图中所示，每个 thread 负责计算的就是 (V,V) 的更小的矩阵。具体来说，从 (L,S) 任取一列的 shape 为 (L,1)，从 (S,L) 任取一行的 shape 为 (1,L)，对二者按照长度为 V 再次进行分块，即分块为 (V,1) 和 (1,V)shape 的两个矩阵，然后由一个线程负责计算二者的外积，得到 shape 为 (V,V) 的结果。
+
+以上就是理论课伪代码中提到的算法，将其改写为 CUDA 代码时需要考虑各种情况，有如下注意点：
+
+- 理论中提到的需要分块的场景，在实践中可能存在不能完美切分，由余数的情况，需要判断是否越界；
+- 每个 block 要计算的结果子矩阵是根据该 block 在 grid 中的位置确定的，每个 thread 要计算的外积的部分是根据其在 block 中的位置确定的；
+- 理论中的 S 和 L 在代码中均取值为宏定义常量 `TILE 4`，V 取值为宏定义常量 `V 2`。
+
+代码中写了比较详细的注释，这部分比较复杂，难以单纯通过文字讲明白，如有问题欢迎留言一起讨论。
+
+```cpp
+__global__ void MatmulKernel(const scalar_t* a, const scalar_t* b, scalar_t* c, uint32_t M, uint32_t N,
+            uint32_t P){
+#define V 2
+#define TILE 4
+  /**
+   * 使用分块计算矩阵乘法，按照TILE大小分块
+   * a: M x N
+   * b: N x P
+   */
+  int block_x = blockIdx.x;
+  int block_y = blockIdx.y;
+  int thread_x = threadIdx.x;
+  int thread_y = threadIdx.y;
+  int thread_id = thread_x + thread_y * blockDim.x;
+  int nthreads = blockDim.x * blockDim.y;
+  // 每个block负责计算一个子矩阵的结果，具体来说，就是c[block_x*TILE: (block_x+1)*TILE, block_y*TILE: (block_y+1)*TILE]
+  // 通过累加"outer product"的结果计算这个子矩阵，product的两个元素都是分块后行列子矩阵的一个stripe
+  // 例如，a按行分块后每一块shape是(TILE, N)，再取一个stripe的shape就是(TILE, TILE)
+  // outer product每次的步长不是1，而是TILE
+
+  __shared__ scalar_t a_shared[TILE][TILE];
+  __shared__ scalar_t b_shared[TILE][TILE];
+  scalar_t c_reg[V][V] = {0};
+  scalar_t a_reg[V]={0}, b_reg[V]={0};
+
+
+  for(int start=0; start<N; start+=TILE){
+    __syncthreads();
+    // 一共有TILE * TILE个元素要导入，每个线程平均负责(TILE * TILE+nthreads-1)/nthreads个元素
+    // for (int i=0; i<(TILE * TILE+nthreads-1)/nthreads; i++){
+    //   int idx = thread_id + i * nthreads; // 在shared中的索引
+    //   int x = idx / TILE; // 在shared中的索引
+    //   int y = idx % TILE; // 在shared中的索引
+    //   // a_shared中的(x, y)相当于a中的(x+block_x*TILE, y+start)
+    //   // b_shared中的(x, y)相当于b中的(x+start, y+block_y*TILE)
+    //   if(x+block_x*TILE < M && y+start < N){
+    //     a_shared[x][y] = a[(x+block_x*TILE)*N + y+start];
+    //   }
+    //   if(x+start < N && y+block_y*TILE < P){
+    //     b_shared[x][y] = b[(x+start)*P + y+block_y*TILE];
+    //   }
+    // }
+    for (int idx = thread_id; idx < TILE * TILE; idx += nthreads){
+      int x = idx / TILE; // 在shared中的索引
+      int y = idx % TILE; // 在shared中的索引
+      // a_shared中的(x, y)相当于a中的(x+block_x*TILE, y+start)
+      // b_shared中的(x, y)相当于b中的(x+start, y+block_y*TILE)
+      if(x+block_x*TILE < M && y+start < N){
+        a_shared[x][y] = a[(x+block_x*TILE)*N + y+start];
+      }
+      if(x+start < N && y+block_y*TILE < P){
+        b_shared[x][y] = b[(x+start)*P + y+block_y*TILE];
+      }
+    }
+    __syncthreads();
+    // 接下来开始计算外积
+    // 通过遍历a_shared的列和b_shared的行，也就是a_shared的第stripe_i行和b_shared的第stripe_i列
+    int stripe_cnt = min(TILE, N-start);
+    for(int stripe_i=0; stripe_i<stripe_cnt; stripe_i++){
+    // 这个外积由nthreads负责计算，这个外积将stripe_a 和 stripe_b 按照连续的V行/列分块，由每个线程计算
+    // 接下来把计算V*V的外积结果的要用的数据加载到寄存器数组中
+      if(thread_x * V >= TILE || thread_y * V >= TILE)
+        continue;
+      for(int reg_x=0; reg_x<V; reg_x++){
+        int shared_x = reg_x + thread_x * V;
+        if(shared_x >= TILE){
+          break;
+        }
+        a_reg[reg_x] = a_shared[shared_x][stripe_i];
+        // b_reg[reg_x] = b_shared[stripe_i][shared_x];
+      }
+      for(int reg_y=0; reg_y<V; reg_y++){
+        int shared_y = reg_y + thread_y * V;
+        if(shared_y >= TILE){
+          printf("quit: thread id: %d, shared_y: %d, TILE: %d\n", thread_id, shared_y, TILE);
+          break;
+        }
+        // a_reg[reg_y] = a_shared[stripe_i][shared_y];
+        b_reg[reg_y] = b_shared[stripe_i][shared_y];
+      }
+      for(int i=0; i<V; i++){
+        for(int j=0; j<V; j++){
+          // 这里“越界”可以不管吧？把c_reg放到结果中的时候再处理
+          c_reg[i][j] += a_reg[i] * b_reg[j];
+        }
+      }
+    }
+  }
+
+  // 把c_reg的结果写入到c中
+  if(thread_x * V >= TILE || thread_y * V >= TILE)
+    return;
+  for(int i=0; i<V; i++){
+    for(int j=0; j<V; j++){
+      int x = block_x * TILE + thread_x * V + i;
+      int y = block_y * TILE + thread_y * V + j;
+      if(x < M && y < P){
+        c[x*P + y] = c_reg[i][j];
+      } else {
+        break;
+      }
+
+    }
+  }
+
+
+}
+
+void Matmul(const CudaArray& a, const CudaArray& b, CudaArray* out, uint32_t M, uint32_t N,
+            uint32_t P) {
+  /**
+   * Multiply two (compact) matrices into an output (also comapct) matrix.  You will want to look
+   * at the lecture and notes on GPU-based linear algebra to see how to do this.  Since ultimately
+   * mugrade is just evaluating correctness, you _can_ implement a version that simply parallelizes
+   * over (i,j) entries in the output array.  However, to really get the full benefit of this
+   * problem, we would encourage you to use cooperative fetching, shared memory register tiling, 
+   * and other ideas covered in the class notes.  Note that unlike the tiled matmul function in
+   * the CPU backend, here you should implement a single function that works across all size
+   * matrices, whether or not they are a multiple of a tile size.  As with previous CUDA
+   * implementations, this function here will largely just set up the kernel call, and you should
+   * implement the logic in a separate MatmulKernel() call.
+   * 
+   *
+   * Args:
+   *   a: compact 2D array of size m x n
+   *   b: comapct 2D array of size n x p
+   *   out: compact 2D array of size m x p to write the output to
+   *   M: rows of a / out
+   *   N: columns of a / rows of b
+   *   P: columns of b / out
+   */
+
+  /// BEGIN SOLUTION
+  // 结果的shape是M*P，每个block负责计算一个TILE*TILE的子矩阵
+  dim3 grid_dim = dim3((M + TILE - 1) / TILE, (P + TILE - 1) / TILE, 1);
+  dim3 block_dim = dim3(16, 16, 1);
+  // dim3 block_dim = dim3(2, 2, 1);
+  MatmulKernel<<<grid_dim, block_dim>>>(a.ptr, b.ptr, out->ptr, M, N, P);
+  /// END SOLUTION
+}
+```
+
+## hw3 小结
+
+本 hw 主要内容是各算子 CPU 和 GPU 版本的底层实现，由于是第一次接触 CUDA 代码，在实现 GPU 版本的矩阵乘法的时候花了不少时间 Debug，调试到最后甚至要头疼昏睡过去。好在皇天不负苦心人，灵感一瞬间它就来了，谁懂这柳暗花明又一村的感觉。特别感谢 [好友](https://www.albresky.cn/) 为我讲解矩阵乘法的实现、大半夜不厌其烦地与我一起调试代码。
 
 # 参考文档
 

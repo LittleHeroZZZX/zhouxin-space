@@ -4,7 +4,7 @@ tags:
   - CUDA
   - 深度学习系统
 date: 2024-05-28T12:24:00+08:00
-lastmod: 2024-08-13T08:21:00+08:00
+lastmod: 2024-09-03T23:14:00+08:00
 publish: true
 dir: notes
 slug: notes on cmu 10-414 deep learning system
@@ -1297,6 +1297,209 @@ for(int j = 0; j < L * S / nthreads; ++j) {
 
 这节课不做笔记，本节课内容可通过完成hw3学习。
 
+# Lecture 14: Implementing Convolutions
+本节课将学习卷积算子的具体实现。
+
+## 存储格式 Storage Order
+对于图片数据或者隐藏层，我们需要存储`batch_size*channel*height*width`即`B*C*H*W`个元素，本课程中，我们选取的存储格式为：
+```cpp
+float Z[BATCHES][HEIGHT][WIDTH][CHANNELS];
+```
+上述格式被称为NHWC格式（N代表number）。PyTorch默认格式为NCHW，其在后期版本也支持NHWC。不同的格式会影响操作的性能：卷积在NHWC上更快，Batch Norm在NCHW上更快。
+
+对于卷积核，其需要存储`k*k*C_in*C_out`个元素，本课程我们选取的存储格式为：
+```cpp
+float weights[KERNEL_SIZE][KERNEL_SIZE][IN_CHANNELS][OUT_CHANNELS];
+```
+PyTorch选择的格式为`(C_out, C_in, k, k)`。
+
+## for循环实现卷积 Convolutions with simple loops
+通过循环来实现卷积操作的过程，从外到内，循环迭代的参数依次为：batch、channel_in、channel_out、out_row、out_column，还有两个循环用于实现卷积，共七个循环：
+```python
+def conv_naive(Z, weight):
+    N,H,W,C_in = Z.shape
+    K,_,_,C_out = weight.shape
+    
+    out = np.zeros((N,H-K+1,W-K+1,C_out));
+    for n in range(N):
+        for c_in in range(C_in):
+            for c_out in range(C_out):
+                for y in range(H-K+1):
+                    for x in range(W-K+1):
+                        for i in range(K):
+                            for j in range(K):
+                                out[n,y,x,c_out] += Z[n,y+i,x+j,c_in] * weight[i,j,c_in,c_out]
+```
+
+该七重循环实现的卷积耗时3秒，而PyTorch仅需1.2毫秒，约2500倍的性能差距。
+
+## 矩阵乘法实现卷积 Convolutions as matrix multiplications
+卷积核中任意一个元素\[ i, j, :, : \]都是一个shape为(c_in, c_out)的矩阵，当其作用在输入图片的某个元素(p,q,m,:)即作用在一个长度为c_in的向量上时，这个过程就是一个矩阵乘法运算。
+
+特别的，对于卷积核大小为1×1的情况，整个卷积过程可以直接用一个矩阵乘法来表示：
+```python
+W1 = np.random.randn(1,1,8,16)
+out = conv_reference(Z,W1)
+```
+
+怎么将1×1的卷积核推广到一般情况呢？可以把卷积核看成由一个个1×1的小卷积核组成的，不断迭代这些卷积核即可。需要注意的是，每个小卷积核在图片上作用的范围都不一样，要做好切片：
+```python
+def conv_matrix_mult(Z, weight):
+    N,H,W,C_in = Z.shape
+    K,_,_,C_out = weight.shape
+    out = np.zeros((N,H-K+1,W-K+1,C_out))
+    
+    for i in range(K):
+        for j in range(K):
+            out += Z[:,i:i+H-K+1,j:j+W-K+1,:] @ weight[i,j]
+    return out
+```
+
+该版本卷积耗时17毫秒，相比PyTorch1.2毫秒，约14倍性能差距。
+
+## 通过strides来操作矩阵 Manipulating matrices via strides
+在内存中，通常将矩阵按照二维数组的形式在内存中存储：
+```cpp
+float A[M][N];
+```
+
+但是，我们在实现一些高效算子时，经常会把矩阵分块，如果将其分块存储，那么这些算子将会具有更好的空间局部性：
+```cpp
+float A[M/TILE][N/TILE][TILE][TILE]
+```
+
+NumPy提供了一个函数用于实现从二维数组转变为分块矩阵的格式：`np.lib.stride_tricks.as_strided`[^4]。
+
+具体来说，`as_strided`这个函数用于创建一个具有不同shape和strides，但与原array具有相同底层数据的视图（view）。
+
+举个例子，如下图所示，一个6×6的矩阵，对于按照2×2进行分块，我们从strides\[3\]倒着写出其值。
+![image.png](https://pics.zhouxin.space/202408252356974.webp?x-oss-process=image/quality,q_90/format,webp)
+- strides \[3\]表示在子矩阵内部移动到下一列的元素的步长，即从0移动到1的步长，数据在内存中是按行连续排列的，因此其值为1；
+- strides \[2\]表示在子矩阵中移动到下一行元素的步长，即从0移动到6的所需步长，观察图片可以看到该步步长等于矩阵的列数N，即6；
+- strides \[1\]表示从一个子矩阵移动到同行下一个子矩阵的对应位置的步长，即从0移动到2的步长，可以看到移动的步长等于分块的列长度TILE，即2；
+- strides \[0\]表示从一个子矩阵移动到同列下一个子矩阵对应位置的步长，即从0移动到12的步长，可以看到移动的步长等于TILE\*N，即12。
+
+确定了strides之后，就可以使用`as_strided`为原矩阵创建一个分块矩阵的视图，并使用`np.ascontiguousarray`创建一个内存连续版本的副本：
+```python
+import numpy as np
+n = 6
+A = np.arange(n**2, dtype=np.float32).reshape(n,n)
+
+B = np.lib.stride_tricks.as_strided(A, shape=(3,3,2,2), strides=np.array((12,2,6,1))*4)  #numpy中strides以字节为单位
+C = np.ascontiguousarray(B)
+```
+
+----------------以下非课程内容----------------
+这里插一嘴，这里实现分块的方式非常不优雅，毕竟numpy并不建议使用这么底层的API来直接修改数据，我问了下GPT，他提供了一种更优雅的方案。
+
+我们首先可以将原矩阵(M, N)reshape为(M//TILE, TILE, N//TILE, TILE)，这一步相当于将原矩阵在行和列上进行分块，并且(p,m,q,n)表示第p行第q列的子矩阵中第m行第n列个元素。然后使用`transpose(0, 2, 1, 3)`重新排列维度即可。
+
+至于为什么reshape那一步后索引仍是正确的，我略微理解的，但难以表达出来，有点只可意会的意思：reshape那个操作可以分成两步完成，分别是在行和列上进行切片，这两个步骤又不冲突，合并后的结果就是如下的代码：
+```python
+def block_matrix(A, TILE):
+    M, N = A.shape
+    assert M % TILE == 0 and N % TILE == 0, "矩阵维度必须能被TILE整除"
+    A_reshaped = A.reshape(M//TILE, TILE, N//TILE, TILE)
+    A_blocked = A_reshaped.transpose(0, 2, 1, 3)
+    return np.ascontiguousarray(A_blocked)
+```
+----------------以上非课程内容----------------
+## 通过 im2col 来实现卷积 Convolutions via im2col
+在Lecture 10中提到，我们可以使用im2col技术，将一维卷积运算转换为矩阵运算：
+{{< math_block >}}
+\begin{bmatrix}z_1\\z_2\\z_3\\z_4\\z_5\end{bmatrix}=x*w=\begin{bmatrix}0&x_1&x_2\\x_1&x_2&x_3\\x_2&x_3&x_4\\x_3&x_4&x_5\\x_4&x_5&0\end{bmatrix}\begin{bmatrix}w_1\\w_2\\w_3\end{bmatrix}
+{{< /math_block >}}
+对于二维卷积来说，同样也是可以的。以卷积核大小为3×3为例，对6×6的矩阵进行卷积，其结果矩阵为4×4。首先，我们找出每次运算的感受野，将其单独拿出来，那么所有这些感受野就组成了一个4×4×3×3的Tensor。
+
+如下图所示，第\[0,0\]个感受野就是\[0,1,2;6,7,8;12,13,14\]。怎么将原始矩阵转变为Tensor呢？这里就可以用到上节提到的`as_strided`方法。strides\[0\]表示到同列下一个感受野的相同位置的元素的步长，为列长6；strides\[1\]表示到同行下一个感受野的步长，为1；strides\[2\]表示同一个感受野内部同列下一个元素的步长，为原始列长6；strides\[3\]表示同一个感受野内部同行下一个元素的步长，为1。即，使用`B = np.lib.stride_tricks.as_strided(A, shape=(4,4,3,3), strides=4*(np.array((6,1,6,1))))`可以将原始待卷积矩阵A转变为感受野张量B。
+![image.png](https://pics.zhouxin.space/202408300948305.png?x-oss-process=image/quality,q_90/format,webp)
+
+下一步，通过reshape操作将单个感受野和卷积核都转变为向量，通过内积运算计算卷积值：
+```python
+(B.reshape(16,9) @ W.reshape(9)).reshape(4,4)
+```
+
+需要注意的是，B的reshape的操作并不是free的，无法通过原始的A的数据来表示reshape后的B，该reshape操作会分配出一块$O(K^2)$的内存空间，当K比较大时，这个操作将相当耗费内存。因此，在现代版本中，常常会使用lazy技术或者其它技术，但这不在本课程讨论范围之内。
+
+## 通过 im2col 来实现多通道卷积
+对于多通道并且考虑batch的卷积，其输入shape为N×H×W×C_in，感受野Tensor为N×(W-K+1)×(H-K+1)×K×K×C_in，需要将K×K×C_in展开为一维，卷积核也要将对应位置展开，即reshape后shape为(K×K×C_in)×C_out。
+
+代码实现为：
+```python
+def conv_im2col(Z, weight):
+    N,H,W,C_in = Z.shape
+    K,_,_,C_out = weight.shape
+    Ns, Hs, Ws, Cs = Z.strides
+    
+    inner_dim = K * K * C_in
+    A = np.lib.stride_tricks.as_strided(Z, shape = (N, H-K+1, W-K+1, K, K, C_in),
+                                        strides = (Ns, Hs, Ws, Hs, Ws, Cs)).reshape(-1,inner_dim)
+    out = A @ weight.reshape(-1, C_out)
+    return out.reshape(N,H-K+1,W-K+1,C_out)
+```
+
+## Lecture 15: Training Large Models
+## 内存节省技术 Techniques for memory saving
+一直以来，GPU的全局内存大小都是模型大小的制约瓶颈，通过一些内存节省技术可以训练更大的一些模型。
+
+模型内存消耗主要有如下几个方面：模型权重、优化器状态（动量值等等）、中间激活层的值。
+
+对于推理来说，保存激活层的内存只需要两块，分别用来保存一层的输入和输出，下一层的输入为上一层的输出，下一层的输出覆盖上一层的输入。其不需要保存中间激活层的值。
+
+而在训练中，由于在计算每一层的梯度时都用到了该层的输入，所每一个激活层都要一片内存保存下来，即激活层的内存数量为$O(N)$，如下图所示：
+![image.png](https://pics.zhouxin.space/202408302230612.png?x-oss-process=image/quality,q_90/format,webp)
+
+
+一种减少激活层内存使用的技术叫做checkpoint，就是每隔一个激活层才保存该层的值，如下图所示：
+![image.png](https://pics.zhouxin.space/202408302240185.png?x-oss-process=image/quality,q_90/format,webp)
+在反向传播时，如果需要用到未保存的隐藏层，则通过上一个隐藏层计算出该层的值即可。这是一种时间换空间的思路。对于一个N层的网络，每隔K个隐藏层保存一次结果，则隐藏层占用的内存空间大小为$O(N/K)+O(K)$，当$K=\sqrt{N}$时可取到最小值。
+## 并行和分布式训练 Parallel and distributed training
+- 计算图划分
+
+当有多个GPU时，可以进行并行分布式训练。一种思路是将计算图进行划分，并分配给不同的worker进行执行，通过通讯协议在worker中间传递数据。如下图所示，整个计算图被划分为两部分。
+![image.png](https://pics.zhouxin.space/202408310842410.png?x-oss-process=image/quality,q_90/format,webp)
+仅仅将计算图划分并不会带来多少的并行性，但是当worker1计算来自worker0的数据时，worker0可以并行计算下一个minibatch的数据，从而实现高并行。
+
+- 数据并行训练
+
+数据并行训练是的是将一个minibatch分割成更小的smaller batch，每个GPU负责一个smaller batch的计算，这样做每隔GPU上都在跑相同的模型。
+
+在分布式和并行计算中，有一个allreduce原语，其作用是将分布在多个进程或节点上的数据进行规约（reduction）操作，然后将结果广播回所有参与的进程或节点。运用这个原语，我们可以在多GPU上计算出smaller batch的梯度，然后利用该原语将计算出整个minibatch的梯度并进行梯度下降。
+
+我们还可以将参数使用专门的参数服务器保存，其它设备需要访问或者更新参数时，只需要调用相应API即可。参数服务器的好处是其不需要等待所有的worker都计算结束再更新，支持动态增减worker数量，提高了系统的鲁棒性。
+
+- 通信计算重叠 communication computation overlap
+
+通信计算重叠，就是指在通信同步时使用非阻塞的方式，在等待IO时继续计算。
+
+# Lecture 16 Generative Adversarial Network
+
+## 生成对抗训练 Generative adversarial training
+对于无监督学习，或者称生成式模型，其任务是通过随机向量生成符合数据集分布的样本。这就引入了一个问题：如何评估样本和目标分布之间的距离。这一评价指标作为我们的目标函数，其必须是可微的，以便后续对模型进行优化。
+
+对抗训练的思路是构造一个oracle classfier D，其作用是辨别生成数据和原始数据，D的输出是输入为生成数据为生成数据的概率。那对于任意一个输入z，生成网络G的输出为G(z)，D对其的判别结果为D(G(z))。那生成器的目标就是尽可能让判别器判别错误，即其损失函数为：
+{{< math_block >}}
+\max_G\{-E_{z\sim Noise}\log{(1-D(G(z)))}\}
+{{< /math_block >}}
+
+需要注意的是，这里并没有现成的辨别器D。我们同样可以用一个神经网络来构造这个辨别器，那这个辨别器的目标就是尽可能判断正确，即其损失函数为：
+{{< math_block >}}
+\min_D\{-E_{z\sim Noise}\log{(1-D(G(z)))}-E_{x\sim Data}\log{D(x)}\}
+{{< /math_block >}}
+
+
+## 将对抗训练作为深度学习中的一个模块 Adversarial training as a module in deep learning models
+接下来我们考虑如何将对抗模型模块化。我们可以将整个判别器作为一个损失函数来实现，当然，其和我们之前实现的损失函数是不一样的，判别器的参数在每轮反向传播时都要更新。
+
+【这一节课似乎没有具体说明如何模块化，后边似乎在介绍GAN网络的各个变种】
+
+在DCGAN中，使用了一种被称为反卷积（转置卷积、Conv2dTranspose）的模块，其作用是进行上采样。
+
+CycleGAN是一个用于风格迁移的模型。对于风格迁移模型来说，一种有监督的训练思路是收集风格迁移前后的图片配对数据集，进行有监督训练。然而，此类配对数据集是很难获取的。如何通过未配对的数据集进行无监督训练呢？可以使用GAN网络，一个生成器G用于升成风格迁移后的图片，使用一个判别器进行对抗训练。另外有一个生成器F，用于还原图片，其也使用一个判别器进行对抗训练。而整个CycleGAN模型还需要保证循环一致性，即将数据集中的一个图片经过G之后，再经过F，应当还原成原始图片，故循环一致性的损失函数就是两个图片之间的L2 Norm。
+
+在下节课中，将讨论GAN系列网络的具体实现。
+
+
 
 
 # 参考文档
@@ -1304,3 +1507,4 @@ for(int j = 0; j < L * S / nthreads; ++j) {
 [^1]: [指数移动平均EMA\_ema移动平均数怎么算-CSDN博客](https://blog.csdn.net/qq_36892712/article/details/133774755)
 [^2]: [zhuanlan.zhihu.com/p/22810533](https://zhuanlan.zhihu.com/p/22810533)
 [^3]: [An overview of gradient descent optimization algorithms](https://www.ruder.io/optimizing-gradient-descent/#Nesterov%20accelerated%20gradient)
+[^4]: [numpy.lib.stride\_tricks.as\_strided — NumPy v2.1 Manual](https://numpy.org/doc/stable/reference/generated/numpy.lib.stride_tricks.as_strided.html)

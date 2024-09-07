@@ -5,7 +5,7 @@ tags:
   - ssh
   - windows
 date: 2024-07-17T17:26:00+08:00
-lastmod: 2024-07-18T14:15:00+08:00
+lastmod: 2024-09-02T18:42:00+08:00
 publish: true
 dir: notes
 slug: using ssh to connect remotely to wsl2
@@ -29,7 +29,7 @@ wsl2 使得 Windows 用户可以很方便地访问 Linux 环境，微软也在 v
 在摸索过程中发现，windows 也是支持通过 ssh 远程连接的，想要 ssh 到 wsl2，自然就有一种曲线救国的方案，即先通过 ssh 连接到 windows 宿主机，然后通过终端进入 wsl2。理论可行，实践如下：
 
 - 启用 ssh 服务器  
-windows 中 ssh 服务器启用可参考官方文档 [^1]，写的很详细。以 Windows 11 为例，在 powershell【使用系统默认版本，powershell 7.4.3 无法正确执行】中以管理员身份执行以下命令即可启用 ssh 服务器：
+windows 中 ssh 服务器启用可参考官方文档 [^1]，写的很详细。以 Windows 11 为例，在 powershell【使用**系统默认版本**，powershell 7.4.3 无法正确执行】中以管理员身份执行以下命令即可启用 ssh 服务器：
 
 ```powershell
 # 安装OpenSSH客户端
@@ -51,7 +51,7 @@ if (!(Get-NetFirewallRule -Name "OpenSSH-Server-In-TCP" -ErrorAction SilentlyCon
 }
 ```
 
-执行完毕后，可使用 `ssh <username>@127.0.0.1` 测试能否通过 ssh 连接到 windows 终端。注意，对于 Windows OpenSSH，唯一可用的身份验证方法是 `password` 和 `publickey`，即不支持
+执行完毕后，可使用 `ssh <username>@127.0.0.1` 测试能否通过 ssh 连接到 windows 终端。注意，对于 Windows OpenSSH，唯一可用的身份验证方法是 `password` 和 `publickey`，即不支持通过 Microsoft 账号验证。
 
 - 修改默认终端为 powershell  
 在 windows 中，默认连接的终端为 cmd，可使用命令 `echo %COMSPEC%` 确认。默认使用的终端由注册表中 `HKEY_LOCAL_MACHINE\SOFTWARE\OpenSSH\DefaultShell` 决定，使用如下命令可以将其修改为 powershell：

@@ -4,7 +4,7 @@ tags:
   - CUDA
   - 深度学习系统
 date: 2024-05-28T12:24:00+08:00
-lastmod: 2024-09-03T23:14:00+08:00
+lastmod: 2024-09-06T21:30:00+08:00
 publish: true
 dir: notes
 slug: notes on cmu 10-414 deep learning system
@@ -1498,6 +1498,294 @@ def conv_im2col(Z, weight):
 CycleGAN是一个用于风格迁移的模型。对于风格迁移模型来说，一种有监督的训练思路是收集风格迁移前后的图片配对数据集，进行有监督训练。然而，此类配对数据集是很难获取的。如何通过未配对的数据集进行无监督训练呢？可以使用GAN网络，一个生成器G用于升成风格迁移后的图片，使用一个判别器进行对抗训练。另外有一个生成器F，用于还原图片，其也使用一个判别器进行对抗训练。而整个CycleGAN模型还需要保证循环一致性，即将数据集中的一个图片经过G之后，再经过F，应当还原成原始图片，故循环一致性的损失函数就是两个图片之间的L2 Norm。
 
 在下节课中，将讨论GAN系列网络的具体实现。
+
+# Lecture 17: Generative Adversarial Networks implementations
+本节课中，我们将学习GAN网络的具体实现。
+
+在课程中，使用二维高斯分布作为真实数据集，训练一个生成器用于升成该分布的数据。训练集数据准备如下：
+```python
+A = np.array([[1, 2], [-0.2, 0.5]])
+mu = np.array([2, 1])
+# total number of sample data to generated
+num_sample = 3200
+data = np.random.normal(0, 1, (num_sample, 2)) @ A + mu
+```
+
+生成器使用一个简单的全连接层即可：
+```python
+model_G = nn.Sequential(nn.Linear(2, 2))
+
+def sample_G(model_G, num_samples):
+    Z = ndl.Tensor(np.random.normal(0, 1, (num_samples, 2)))
+    fake_X = model_G(Z)
+    return fake_X.numpy()
+```
+
+判别器是一个三层的感知机，损失函数为softmax loss：
+```python
+model_D = nn.Sequential(
+    nn.Linear(2, 20),
+    nn.ReLU(),
+    nn.Linear(20, 10),
+    nn.ReLU(),
+    nn.Linear(10, 2)
+)
+loss_D = nn.SoftmaxLoss()
+```
+
+优化生成器G的过程就是使用G随机生成一些数据G(z)，计算D(G(z))的输出和label 1之间的损失：
+```python
+opt_G = ndl.optim.Adam(model_G.parameters(), lr=0.01)、
+
+def update_G(Z, model_G, model_D, loss_D, opt_G):
+    fake_X = model_G(Z)
+    fake_Y = model_D(fake_X)
+    batch_size = Z.shape[0]
+    ones = ndl.ones(batch_size, dtype="int32")
+    loss = loss_D(fake_Y, ones)
+    loss.backward()
+    opt_G.step()
+```
+
+同样，判别器的更新过程就是计算D(x)和label 1之间的损失，D(G(z))和label 0之间的损失，x是真实数据：
+```python
+opt_D = ndl.optim.Adam(model_D.parameters(), lr=0.01)
+
+def update_D(X, Z, model_G, model_D, loss_D, opt_D):
+    fake_X = model_G(Z).detach()
+    fake_Y = model_D(fake_X)
+    real_Y = model_D(X)
+    assert X.shape[0] == Z.shape[0]
+    batch_size = X.shape[0]
+    ones = ndl.ones(batch_size, dtype="int32")
+    zeros = ndl.zeros(batch_size, dtype="int32")
+    loss = loss_D(real_Y, ones) + loss_D(fake_Y, zeros)
+    loss.backward()
+    opt_D.step()
+```
+
+训练过程则是每次迭代中，将随机向量送入生成器，再将生成器的输出喂给判别器，然后分别更新二者的参数即可，注意以下代码中epoch指的是训练了几个batch，而不是指在训练集上完整训练了几轮：
+```python
+def train_gan(data, batch_size, num_epochs):
+    assert data.shape[0] % batch_size == 0
+    data.astype(np.float32)
+    for epoch in range(num_epochs):
+        begin = (batch_size * epoch) % data.shape[0]
+        X = data[begin: begin+batch_size, :]
+        Z = np.random.normal(0, 1, (batch_size, 2))
+        X = ndl.Tensor(X)
+        Z = ndl.Tensor(Z)
+        update_D(X, Z, model_G, model_D, loss_D, opt_D) 
+        update_G(Z, model_G, model_D, loss_D, opt_G)
+
+train_gan(data, 32, 2000)
+```
+
+以上就是训练一个GAN网络的全过程，接下来我们考虑如何GAN Loss模块化。GAN Loss的作用是给定一个生成器的输出，返回一个损失值。此外，当生成器拿到损失值后就会直接进行生成器的参数更新，因此GAN Loss内部必须隐式更新自身的参数，即：
+```python
+class GANLoss:
+    def __init__(self, model_D, opt_D):
+        self.model_D = model_D
+        self.opt_D = opt_D
+        self.loss_D = nn.SoftmaxLoss()
+
+    def _update_D(self, real_X, fake_X):
+        real_Y = self.model_D(real_X)
+        fake_Y = self.model_D(fake_X.detach())
+        batch_size = real_X.shape[0]
+        ones = ndl.ones(batch_size, dtype="float32")
+        zeros = ndl.zeros(batch_size, dtype="float32")
+        loss = self.loss_D(real_Y, ones) + self.loss_D(fake_Y, zeros)
+        loss.backward()
+        self.opt_D.step()
+
+    def forward(self, fake_X, real_X):
+        self._update_D(real_X, fake_X)
+        fake_Y = self.model_D(fake_X)
+        batch_size = real_X.shape[0]
+        ones = ndl.ones(batch_size, dtype="float32")
+        loss = self.loss_D(fake_Y, ones)
+        return loss
+
+```
+
+# Lecture 18: Sequence Modeling and Recurrent Networks
+## 序列建模 Sequence modeling
+在前面的模型中，我们都做了一个隐式假设：x和y之间是独立同分布的，但是在实践中，很多任务的y都是与x相关的，尤其是当y是一个时间序列数据。
+
+对于序列数据来说，有一类预测模型是自回归模型，其基本思想是利用序列自身的历史值来预测未来值。
+
+## 循环神经网络 Recurrent neural networks
+循环网络也能用于解决序列数据的建模问题。RNN网络的思想是构建一个网络模型用于模拟输入序列中的时序信息。
+
+如下图所示，h表示模型中的隐藏层，隐藏层的输入为前一个隐藏层的状态和当前输入x，经过非线性变换后得到该隐藏层，当前输入的对应输出则由对应隐藏层经过非线性变换后得到。
+即：
+{{< math_block >}}
+\begin{align*}  
+h_t &= f(h_{t-1},x_t)\\  
+y_t &=g(h)  
+\end{align*}
+{{< /math_block >}}
+
+![image.png](https://pics.zhouxin.space/202409041829344.png?x-oss-process=image/quality,q_90/format,webp)
+
+理论上来说，如果建模得当，这种模式在预测$y_t$时可以获取前面所有时刻的时序信息。
+
+RNN的训练时需要配对的x和y作为数据集，损失函数由每一个预测值和真实值之间的损失累加得到。显然，这个损失函数很难通过笔纸进行推导，但得益于我们之前构建的自动微分系统，我们不需要手动计算任何梯度。
+
+可以将多个RNN堆叠在一起，得到stacking RNN，如下图所示：
+![image.png](https://pics.zhouxin.space/202409041908220.png?x-oss-process=image/quality,q_90/format,webp)
+
+RNN在训练过程中很容易出现梯度/激活层爆炸和梯度/激活层消失问题。之前的lecture提到，当训练很深的网络时，初始化参数是很重要的。在RNN上，这个问题更加严重，因为RNN的模型通常很深很深。
+
+一个解决梯度问题的方法是着眼于激活函数。ReLU作为激活函数其一个问题是其输出可以无限大。然而，将激活函数修改为有界函数，例如sigmoid或者tanh并不能解决这一问题，尤其是，其不能解决激活层/梯度消失问题。如下所示，对于tanh，当x在0附近时，其输出仍在0附近，这会导致隐藏层消失；但于两个函数，当输入在-5和5附近时，其梯度很小，这会导致梯度消失。
+
+![image.png](https://pics.zhouxin.space/202409041923270.png?x-oss-process=image/quality,q_90/format,webp)
+
+## LSTMs
+LSTM一定程度上减轻了RNN中存在的梯度消失和爆炸问题。LSTM在原版RNN的基础上对隐藏层进行了一定改进。如下图所示，LSTM将原始hidden state分裂为两个组件hidden state和cell state。
+![image.png](https://pics.zhouxin.space/202409041935116.png?x-oss-process=image/quality,q_90/format,webp)
+
+其次，LSTM中具体定义了hidden state和cell state的具体更新公式。LSTM中定义了一些中间变量用于更简洁地描述这一公式，中间变量有forget gate、input gate、output gate，还有一个候选状态g_t。这些中间变量和状态的更新公式如下所示：
+
+{{< math_block >}}
+\begin{align*}  
+&\begin{bmatrix}i_t\\f_t\\g_t\\o_t\end{bmatrix}=\begin{pmatrix}\text{sigmoid}\\\text{sigmoid}\\\text{tanh}\\\text{sigmoid}\end{pmatrix}(W_{hh}h_{t-1}+\text{W}_{hx}x_t+b_h) \\  
+&c_t=c_{t-1}\circ f_t+i_t\circ g_t \\  
+&h_t=\tanh(c_t)\circ o_t\\  
+&i_t,f_t,g_t,o_t,c_t,h_t \in \mathbb{R}^d\\  
+&W_{hh},W_{hx}\in \mathbb{R}^{4d\times d}  
+\end{align*}
+{{< /math_block >}}
+
+$W_{hh},W_{hx}\in \mathbb{R}^{4d\times d}$意味着，计算中间变量的权重彼此都是独立的。
+
+？？？？！！！这公式怎么来的，为啥子这个公式管用？有很多工作试图对此进行解释，但大多是一家之言。Zico Kolter教授对此的解释是：$g_t$在经过sigmoid以后是一个0-1变量，用于决定是否要保留前一状态对应位置的cell state信息，$i_t$同样是个0-1变量，而$g_t$是个有界项，这一组合决定了是否要在cell state的位置上添加一些额外的信息；$h_t$的更新公式则是一个有界变量，其作用是防止梯度爆炸或者消失。
+## Beyond "simple" sequential models
+除了对序列数据进行建模，RNN能做的还有很多。例如，翻译句子，有一种sequence to sequence架构采用了两个RNN模型，一个用于输入原始句子，提取中间状态，另一个用于根据最后一个中间状态，输出翻译后的句子。
+![image.png](https://pics.zhouxin.space/202409042233558.png?x-oss-process=image/quality,q_90/format,webp)
+
+
+这意味着，RNN可以作为一个encoder对语义信息进行提取和编码，也可以作为decoder对语义信息进行解码。
+
+RNN有一种变体是双向RNN，其作用是$x_i$时刻的输出与前后都相关，在一些任务，例如完形填空中可以有较好的表现。
+
+# Lecture 19: LSTM Implementation
+## LSTM cell
+本节课，我们将在NumPy实现LSTM。首先来实现LSTM cell，一个cell是hidden state和cell state的集合，其状态更新公式为：
+{{< math_block >}}
+\begin{align*} \\  
+        i_t &= \sigma(W_{ii} x_t + b_{ii} + W_{hi} h_{t-1} + b_{hi}) \\  
+        f_t &= \sigma(W_{if} x_t + b_{if} + W_{hf} h_{t-1} + b_{hf}) \\  
+        g_t &= \tanh(W_{ig} x_t + b_{ig} + W_{hg} h_{t-1} + b_{hg}) \\  
+        o_t &= \sigma(W_{io} x_t + b_{io} + W_{ho} h_{t-1} + b_{ho}) \\  
+        c_t &= f_t \odot c_{t-1} + i_t \odot g_t \\  
+        h_t &= o_t \odot \tanh(c_t) \\  
+    \end{align*}
+{{< /math_block >}}
+
+上述公式在上节课中，可以记为矩阵的形式，即：
+{{< math_block >}}
+\begin{align*}  
+&\begin{bmatrix}i_t\\f_t\\g_t\\o_t\end{bmatrix}=\begin{pmatrix}\text{sigmoid}\\\text{sigmoid}\\\text{tanh}\\\text{sigmoid}\end{pmatrix}(W_{hh}h_{t-1}+\text{W}_{hx}x_t+b_h) \\  
+&c_t=c_{t-1}\circ f_t+i_t\circ g_t \\  
+&h_t=\tanh(c_t)\circ o_t\\  
+&i_t,f_t,g_t,o_t,c_t,h_t \in \mathbb{R}^d\\  
+&W_{hh},W_{hx}\in \mathbb{R}^{4d\times d}  
+\end{align*}
+{{< /math_block >}}
+
+
+在PyTorch中，已经有LSTM的具体实现，当我们实例化一个$20\times100$的cell，即输入向量长度为20，中间状态特征长度为100，那$W_{hh}$和$W_{hx}$的形状就是$400\times 100$和$400\times 20$。
+
+根据上述更新公式，可以得到计算一个LSTM cell 的方法：
+```python
+def sigmoid(x):
+    return 1/(1+np.exp(-x))
+
+def lstm_cell(x, h, c, W_hh, W_ih, b):
+    i,f,g,o = np.split(W_ih@x + W_hh@h + b, 4)
+    i,f,g,o = sigmoid(i), sigmoid(f), np.tanh(g), sigmoid(o)
+    c_out = f*c + i*g, 
+    h_out = o * np.tanh(c_out)
+    return h_out, c_out
+```
+
+## Full sequence LSTM
+基于PyTorch的传统，在实现LSTM时，返回所有的hidden state以及最后一个cell state。前面没有提到，LSTM中各个cell的参数的权重是共享的。那LSTM实际上就是根据序列的长度重复执行`lstm_cell`即可：
+```python
+def lstm(X, h, c, W_hh, W_ih, b):
+    H = np.zeros((X.shape[0], h.shape[0]))
+    for t in range(X.shape[0]):
+        h, c = lstm_cell(X[t], h, c, W_hh, W_ih, b)
+        H[t,:] = h
+    return H, c
+```
+
+## Batching efficiently
+接下来我们考虑如何实现batch LSTM，一种符合习惯的做法是将batch作为第一个维度将输入X堆叠起来，即`X[NUM_BATCHES][NUM_TIMESTEPS][INPUT_SIZE]`，这种格式被称为NTC格式。如果采用改格式，那么在经过lstm时，第i个cell访问的元素为`X[:,i,:]`，注意，这些元素在内存中不是紧密排列的，cache命中率较低。
+
+如果将时间维度放在第一个，即采用TNC格式，则能够解决该问题。
+
+其余代码几乎不需要改动，矩阵乘法时要注意将三维的X放到@运算符前面：
+```python
+def lstm_cell(x, h, c, W_hh, W_ih, b):
+    i,f,g,o = np.split(x@W_ih + h@W_hh + b[None,:], 4, axis=1)
+    i,f,g,o = sigmoid(i), sigmoid(f), np.tanh(g), sigmoid(o)
+    c_out = f*c + i*g
+    h_out = o * np.tanh(c_out)
+    return h_out, c_out
+
+def lstm(X, h, c, W_hh, W_ih, b):
+    H = np.zeros((X.shape[0], X.shape[1], h.shape[1]))
+    for t in range(X.shape[0]):
+        h, c = lstm_cell(X[t], h, c, W_hh, W_ih, b)
+        H[t,:,:] = h
+    return H, c
+```
+
+## Training LSTMs
+训练一个单层LSTM很简单，不赘述，直接看代码：
+```python
+def train_lstm(X, Y, h0, c0, parameters)
+    H, cn = lstm(X, h0, c0, parameters)
+    l = loss(H, Y)
+    l.backward()
+    opt.step()
+```
+
+训练一个多层LSTM也不难，可以选择先在深度或者时间维度上正向传播，再在另一个维度上正向传播。示例代码采用先时间再深度的形式：
+```python
+def train_lstm(X, Y, h0, c0, parameters)
+    H = X
+    for i in range(depth):
+        H, cn = lstm(H, h0[i], c0[i], parameters[i])
+    l = loss(H, Y)
+    l.backward()
+    opt.step()
+```
+
+接下来重头戏来了。如果我们的序列长度很长，那么进行一次正向传播需要保存的中间变量就很多很多，显存可能不够，怎么解决这个问题？
+
+我们可以把这个序列按照某个固定长度进行截断，首先计算第一段中的loss，并进行反向传播，然后对后一段继续进行正向传播，同时将第一段的最后一个cell state作为第二段的初始state传入，然后反向传播...
+
+一直等到整个序列处理完毕，再更新参数。理解这个过程后，不难发现，阶段版本和完整版本是完全等价的，这也是为什么lstm需要返回最后一个cell state。上述过程可描述为：
+```python
+def train_lstm(X, Y, h0, c0, parameters)
+    H, cn = lstm(X, h0, c0, parameters)
+    l = loss(H, Y)
+    l.backward()
+    opt.step()
+    return H[-1].data, cn.data
+
+h0, c0 = zeros()
+for i in range(0,X.shape[0],BLOCK_SIZE):
+    h0, c0 = train_lstm(X[i:i+BLOCK_SIZE], Y[i:i+BLOCK_SIZE], h0, c0, parameters)
+```
+
+# Lecture 20: Transformers and Attention
+
+## 两种
 
 
 

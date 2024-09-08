@@ -29,6 +29,8 @@ math: "true"
 
 本门课程的核心内容在 Lecture 0~15，对应的 homework 是 hw0~3，后面的内容没有时间可以跳过。
 
+ps：全文章两万余字，Chrome渲染图片时可能会很卡，建议使用Microsoft Edge浏览。
+
 # Lecture 1: Introduction and Logistics
 
 ## 课程的目标

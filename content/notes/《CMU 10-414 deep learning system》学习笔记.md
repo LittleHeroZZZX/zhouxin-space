@@ -4,7 +4,7 @@ tags:
   - CUDA
   - 深度学习系统
 date: 2024-05-28T12:24:00+08:00
-lastmod: 2024-09-06T21:30:00+08:00
+lastmod: 2024-09-08T20:38:00+08:00
 publish: true
 dir: notes
 slug: notes on cmu 10-414 deep learning system
@@ -12,6 +12,22 @@ images:
   - https://pics.zhouxin.space/202406041918872.png?x-oss-process=image/quality,q_90/format,webp
 math: "true"
 ---
+
+# 写在最前面
+
+从 2024-04-28 到 2024-09-08，历时四个多月，总算把 DLSys 学完了。这门课的一些收获：
+
+- 自动微分理论知识和在实践过程中衍生的包括计算图等知识
+- 系统学习了 ML 中几个基本模型和组件
+- Tensor 的 strides 相关内容
+- 基础 CUDA 编程
+
+个人认为这门课一些没达到我预期的地方：
+
+- CUDA 编程的内容太浅
+- 后续讲 CNN、RNN、Transformer 的部分没必要，可以继续深入 CUDA 或者压缩课时
+
+本门课程的核心内容在 Lecture 0~15，对应的 homework 是 hw0~3，后面的内容没有时间可以跳过。
 
 # Lecture 1: Introduction and Logistics
 
@@ -1438,7 +1454,7 @@ def conv_im2col(Z, weight):
     return out.reshape(N,H-K+1,W-K+1,C_out)
 ```
 
-## Lecture 15: Training Large Models
+# Lecture 15: Training Large Models
 ## 内存节省技术 Techniques for memory saving
 一直以来，GPU的全局内存大小都是模型大小的制约瓶颈，通过一些内存节省技术可以训练更大的一些模型。
 
@@ -1660,7 +1676,7 @@ LSTM一定程度上减轻了RNN中存在的梯度消失和爆炸问题。LSTM在
 
 $W_{hh},W_{hx}\in \mathbb{R}^{4d\times d}$意味着，计算中间变量的权重彼此都是独立的。
 
-？？？？！！！这公式怎么来的，为啥子这个公式管用？有很多工作试图对此进行解释，但大多是一家之言。Zico Kolter教授对此的解释是：$g_t$在经过sigmoid以后是一个0-1变量，用于决定是否要保留前一状态对应位置的cell state信息，$i_t$同样是个0-1变量，而$g_t$是个有界项，这一组合决定了是否要在cell state的位置上添加一些额外的信息；$h_t$的更新公式则是一个有界变量，其作用是防止梯度爆炸或者消失。
+	？？？？！！！这公式怎么来的，为啥子这个公式管用？有很多工作试图对此进行解释，但大多是一家之言。Zico Kolter教授对此的解释是：$g_t$在经过sigmoid以后是一个0-1变量，用于决定是否要保留前一状态对应位置的cell state信息，$i_t$同样是个0-1变量，而$g_t$是个有界项，这一组合决定了是否要在cell state的位置上添加一些额外的信息；$h_t$的更新公式则是一个有界变量，其作用是防止梯度爆炸或者消失。
 ## Beyond "simple" sequential models
 除了对序列数据进行建模，RNN能做的还有很多。例如，翻译句子，有一种sequence to sequence架构采用了两个RNN模型，一个用于输入原始句子，提取中间状态，另一个用于根据最后一个中间状态，输出翻译后的句子。
 ![image.png](https://pics.zhouxin.space/202409042233558.png?x-oss-process=image/quality,q_90/format,webp)
@@ -1785,11 +1801,145 @@ for i in range(0,X.shape[0],BLOCK_SIZE):
 
 # Lecture 20: Transformers and Attention
 
-## 两种
+## 两种为时间序列建模的方法 The two approaches to time series modeling
+RNN在对时间序列建模时采用了一种被称为潜在状态latent state的方式，具体来说，其使用t时刻的hidden state来描述t及t时刻往前的所有信息。这种方法的优点是其理论上可以聚合无限长时刻的信息，缺点是其难以有效记住较远时刻的信息，并且存在梯度爆炸和消失问题。
+
+而另一种建模方式被称为直接预测 direct prediction，具体来说，直接使用t和t时刻之前的sequence来预测t时刻的输出。这种方式的优点时，对于大部分输出，其计算路径要短的，缺点是没有明确的状态表示，在实践中往往序列长度有限。Transformer就属于这种直接预测方式对时间序列进行建模。
+
+【此处跳过对CNN用于时间序列建模及其优缺点的介绍】
+
+## 自注意力机制和Transformer Self-attention and transformers
+Attention机制本质上指的是任何对状态进行加权求和的机制，这个权重显然不应该由我们自己决定，而是可学习的参数，再经过一层softmax后得到的权重。
+
+而自注意力机制，顾名思义，就是由状态自己来决定权重，然后对状态按权重求和的机制。
+
+在自注意力中，KQV是三个shape相同的矩阵，即$K,Q,V\in \mathbb{R}^{T\times d}$ ，KQV都是由输入$X$乘上不同的权重得到的$W_K W_Q W_V$得到，self-attention算子的定义为：
+{{< math_block >}}
+\text{SelfAttention}(K,Q,V) = \text{softmax}(\frac{KQ^T}{\sqrt{d}})V
+{{< /math_block >}}
+其中，softmax操作是对每一行进行的。
+
+接下来我们尝试理解这个式子在做什么。首先我们要明确，KQV的每一行都是由X对应行加权求和得到的，也就是说，KQV每一行并没有其它行的时序信息（X的每一行表示一个时间的输入）。$KQ^T$是一个T×T的矩阵，其第i行第j个元素是由K的第i行和j的第i列作内积得到，在这里，时序信息进行了交换。对于$KQ^T$的第i行，其每个元素的值大小在一定程度上反应了Q中每一列与之的相似度，然后对这一行进行了softmax操作，得到权重。接下来将这个权重矩阵乘上V，得到自注意力的值。最后得到的结果矩阵中，每一行结果都是根据权重矩阵对V进行加权求和得到的，也正是在这里，发生了时序信息的混合。
+
+自注意力有如下几个特点
+- 对KQV的排列具有不变性（实际上是等价性）。也就是说，如果按行重排KQV，自注意力的结果不会因此改变，只会因此发生对应的重排。
+- 自注意力机制会在所有的时间步上起作用，也就是自注意力可以混合时序信息。
+- 计算开销为$O(T^2d)$。
+
+一个Transformer Block结构如下图所示：
+![image.png](https://pics.zhouxin.space/202409080919833.png?x-oss-process=image/quality,q_90/format,webp)
+
+这个流程用公式表示为：
+{{< math_block >}}
+\begin{align*}  
+\tilde{Z} &:= \text{SelfAttention}\big(Z^{(i)}W_K,Z^{(i)}W_Q,Z^{(i)}W_V\big) \\  
+&= \mathrm{softmax}\left(\frac{Z^{(i)}W_KW_V^T(Z^{(i)})^T}{d^{1/2}}\right)Z^{(i)}W_V \\  
+\tilde{Z} &:= \text{LayerNorm}\bigg(Z^{(i)} \boldsymbol{+}\tilde{Z}\bigg) \\  
+Z^{(i+1)} &:= \text{LayerNorm}(\mathrm{ReLU}(\tilde{Z}W)+\tilde{Z})  
+\end{align*}
+{{< /math_block >}}
+
+Transformer的优点是：
+- 可以在一个block中混合所有时间步的时序信息；
+- 随着时间步的增加，Transformer不需要额外引入新的参数。
+
+其缺点是：
+- 每个输出都依赖于所有时间步的输入；
+- 输入没有时序，也就是说可以将时序打乱再输入给Transformer，结果还是一样的。
+
+接下来介绍两种技术针对缺点进行改进。
+
+首先是掩码自注意力，即masked self-attention。之前提到，在自注意力的计算公式中，softmax后的$KQ^T$是一个密集矩阵，每一行都是表示一个权重，会将所有时刻的状态加权求和。而掩码自注意力的做法是，将让$KQ^T$的上三角部分减去无穷大，这样权重矩阵的上三角部分为0，即只对t之前的时刻加权求和，以防止获取未来信息。
+
+为了解决输入时序的问题，引入了位置编码position encoding技术，给输入加上一个用于表示时间信息的矩阵，如下所示：
+{{< math_block >}}
+X\in\mathbb{R}^n= \begin{bmatrix}-&x_1^\top&-\\-&x_2^\top&-\\&\vdots&\\-&x_T^\top&-\end{bmatrix}+\begin{bmatrix}\sin(\omega_1\cdot1)&\cdots&\sin(\omega_n\cdot1)\\\sin(\omega_1\cdot2)&\cdots&\sin(\omega_n\cdot2)\\\vdots&\ddots&\vdots\\\sin(\omega_1\cdot T)&\cdots&\sin(\omega_n\cdot T)\end{bmatrix}
+{{< /math_block >}}
+通常，其中的$w_i$根据对数函数的变化趋势来选择。
+
+# Lecture 21: Transformer Implementation
+本节课中，我们将使用NumPy来实现Transformer。
+
+## 自注意力机制 Self-attention
+自注意力的公式为：
+{{< math_block >}}
+Y = \left(\mathrm{softmax}\left(\frac{X W_K W_Q^T X^T}{\sqrt{d}}\right)X W_V \right) W_o
+{{< /math_block >}}
+与上一讲有些许不同之处在于在输出前进行了一次额外的线性变换。
+
+注意到公式中我们需要将X与三个W分别相乘以得到KQV，可以将这三次矩阵运算变为一个运算，即将三个矩阵concat在一起，然后与X相乘，一下子得到concat在一起的KQV。一个自注意力模块为：
+```python
+def self_attention(X, mask, W_KQV, W_out):
+    K,Q,V = np.split(X@W_KQV, 3, axis=-1)
+    attn = softmax(K@Q.swapaxes(-1,-2) / np.sqrt(X.shape[-1]) + mask)
+    return attn@V@W_out, attn
+```
 
 
+## Minibatching with batch matrix multiply 
+自注意力不是按照时间循序进行前向传播的，因此X仍按照正常BTD的顺序在内存中组织。当我们实现批量self-attention时，就涉及到了批量矩阵乘法的概念。
 
+具体来说，公式中$K@Q^T$这一步的矩阵乘法，K和Q的shape都是B×T×T，这就涉及到了批量矩阵乘法。对我们都自注意力来说，想要的应该是K\[i,:,:\]与Q.T\[i,:,:\]相乘，碰巧，批量矩阵乘法正是这么定义的，也就是说，批量矩阵乘法要求两个矩阵之间除了倒数两个维度符合矩阵乘法要求，剩余其它维度要么不存在或为1进行广播，要么就是要相等的。
 
+## Multihead attention 多头注意力
+多头自注意力的动机来自于$K@Q^T$这一步，结果每个元素都是长度为d的两个向量内积得到的。为了降低计算成本，提出了一种多头注意力机制。即，将KQV的每一行分为h个部分，进行注意力操作，然后再拼接起来。这样，$K@Q^T$每个值都是长度为d/h向量进行内积得到的。
+
+```python
+def multihead_attention(X, mask, heads, W_KQV, W_out):
+    N,T,d = X.shape
+    K,Q,V = np.split(X@W_KQV, 3, axis=-1)
+    K,Q,V = [a.reshape(N,T,heads,d//heads).swapaxes(1,2) for a in (K,Q,V)]
+    
+    attn = softmax(K@Q.swapaxes(-1,-2) / np.sqrt(d//heads) + mask)
+    return (attn@V).swapaxes(1,2).reshape(N,T,d) @ W_out, attn
+```
+
+## Transformer block
+一个Transformer Block结构如下图所示：
+![image.png](https://pics.zhouxin.space/202409080919833.png?x-oss-process=image/quality,q_90/format,webp)
+
+应用已经实现的各个组件，我们可以轻松地写出一个支持多头自注意力的Transformer块：
+```python
+def layer_norm(Z, eps):
+    return (Z - Z.mean(axis=-1, keepdims=True)) / np.sqrt(Z.var(axis=-1, keepdims=True) + eps)
+    
+def relu(Z):
+    return np.maximum(Z,0)
+
+def transformer(X, mask, heads, W_KQV, W_out, W_ff1, W_ff2, eps):
+    Z = layer_norm(multihead_attention(X, mask, heads, W_KQV, W_out)[0] + X, eps)
+    return layer_norm(Z + relu(Z@W_ff1)@W_ff2, eps)
+```
+
+# Lecture 23 Moel Deployment
+## 模型部署概览 Model deployment overview
+在特定的设备上部署训练好的模型是一件比较麻烦的事情，其受设备的影响很大。现在有一些用于部署推理的框架，例如NVIDIA设备上的TensorRT，在嵌入式设备上有ARMComputeLib和TFLite，苹果有CoreML。
+
+上述框架都需要一种推理模型格式的输入，这个输入能够描述模型的计算流程，这种格式目前有ONNX、CoreML和TFLite。模型通过Python编写，其好处是提高了编码效率，带来的缺点就是可能某些模型没办法完美转换为上述通用格式。
+
+许多推理框架都是以计算图解释器的形式组织的，其通过预分配和重用内存、算子融合、精度量化等优化手段，实现更高效的推理。但同样，其也有很多限制，例如他们支持的算子类别是有限的。
+## 机器学习编译 Machine learning compilation
+机器学习编译试图打破需要为每种设备定制推理库的现状，其目标是将输入的深度学习模型转换为可以直接在终端上运行的代码。
+
+一个ML程序可以被称为一个模块，这个模块由多个函数构成，函数之间互相调用。下图这种格式被称为中间状态表示IR，下图这一模块被称为IR模块。
+
+![image.png](https://pics.zhouxin.space/202409081958517.png?x-oss-process=image/quality,q_90/format,webp)
+
+ML编译的流程大致有：
+- 从深度学习框架中导入模型；
+![](https://pics.zhouxin.space/202409082011257.png?x-oss-process=image/quality,q_90/format,webp)
+- 对IR模块进行变换，算子融合
+![image.png](https://pics.zhouxin.space/202409082011947.png?x-oss-process=image/quality,q_90/format,webp)
+
+- 将中间状态翻译为更低级的循环代码
+![image.png](https://pics.zhouxin.space/202409082011782.png?x-oss-process=image/quality,q_90/format,webp)
+- 进行更低级的变换，进行算子融合
+![image.png](https://pics.zhouxin.space/202409082013131.png?x-oss-process=image/quality,q_90/format,webp)
+- 进行代码生成
+![image.png](https://pics.zhouxin.space/202409082014722.png?x-oss-process=image/quality,q_90/format,webp)
+本讲后续内容和下一讲均为介绍MLC，计划后面继续学习MLC，这里就不浅尝辄止了。
+
+全文完。
 # 参考文档
 
 [^1]: [指数移动平均EMA\_ema移动平均数怎么算-CSDN博客](https://blog.csdn.net/qq_36892712/article/details/133774755)

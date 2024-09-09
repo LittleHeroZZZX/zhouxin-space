@@ -15,7 +15,7 @@ math: "true"
 
 # 写在最前面
 
-从 2024-04-28 到 2024-09-08，历史四个多月，总算把 DLSys 学完了。这门课的一些收获：
+从 2024-04-28 到 2024-09-08，历时四个多月，总算把 DLSys 学完了。这门课的一些收获：
 
 - 自动微分理论知识和在实践过程中衍生的包括计算图等知识
 - 系统学习了 ML 中几个基本模型和组件
@@ -28,6 +28,8 @@ math: "true"
 - 后续讲 CNN、RNN、Transformer 的部分没必要，可以继续深入 CUDA 或者压缩课时
 
 本门课程的核心内容在 Lecture 0~15，对应的 homework 是 hw0~3，后面的内容没有时间可以跳过。
+
+ps：全文章两万余字，Chrome渲染图片时可能会很卡，建议使用Microsoft Edge浏览。
 
 # Lecture 1: Introduction and Logistics
 

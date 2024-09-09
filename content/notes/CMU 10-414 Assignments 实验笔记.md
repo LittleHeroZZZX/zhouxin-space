@@ -4,7 +4,7 @@ tags:
   - CUDA
   - 深度学习系统
 date: 2024-06-06T13:28:00+08:00
-lastmod: 2024-08-25T13:42:00+08:00
+lastmod: 2024-09-09T16:18:00+08:00
 publish: true
 dir: notes
 slug: notes on cmu 10-414 assignments
@@ -2389,6 +2389,243 @@ void Matmul(const CudaArray& a, const CudaArray& b, CudaArray* out, uint32_t M, 
 
 本 hw 主要内容是各算子 CPU 和 GPU 版本的底层实现，由于是第一次接触 CUDA 代码，在实现 GPU 版本的矩阵乘法的时候花了不少时间 Debug，调试到最后甚至要头疼昏睡过去。好在皇天不负苦心人，灵感一瞬间它就来了，谁懂这柳暗花明又一村的感觉。特别感谢 [好友](https://www.albresky.cn/) 为我讲解矩阵乘法的实现、大半夜不厌其烦地与我一起调试代码。
 
+# hw4
+
+本实验中，首先将实现一些算子，然后分别实现 CNN 和 RNN 网络，并在数据集上进行训练。
+
+## Part 1: ND Backend
+
+首先将 `src/*`、`autograd.py`、`ndarray.py` 文件中未实现的方法从之前的 hw 中复制过来，然后在 `ops_*.py` 中实现之前实现过的 op，大部分只要复制粘贴。
+
+提一下我踩过的坑 [^2]：
+
+- `autograd.py` 中头文件为如下内容，以保证我们这里使用的后端是根据环境变量 `NEEDLE_BACKEND` 自动切换的，并且不为 NumPy 后端。
+
+```python
+import needle
+# from .backend_numpy import Device, cpu, all_devices
+from typing import List, Optional, NamedTuple, Tuple, Union
+from collections import namedtuple
+import numpy
+
+from needle import init
+
+# needle version
+LAZY_MODE = False
+TENSOR_COUNTER = 0
+
+from .backend_selection import array_api, NDArray, default_device
+from .backend_selection import Device, cpu, all_devices
+```
+
+- 在 `ndarray.py` 中 sum 和 max 规约函数是不支持指定多个轴的，需要修改之以便支持多个轴。
+
+```python
+def sum(self, axis=None, keepdims=False):
+	if isinstance(axis, int):
+		view, out = self.reduce_view_out(axis, keepdims=keepdims)
+		self.device.reduce_sum(view.compact()._handle, out._handle, view.shape[-1])
+	elif isinstance(axis, (tuple, list)):
+		for axis_ in axis:
+			view, out = self.reduce_view_out(axis_, keepdims=keepdims)
+			self.device.reduce_sum(view.compact()._handle, out._handle, view.shape[-1])
+	else:
+		view, out = self.reduce_view_out(axis, keepdims=keepdims)
+		self.device.reduce_sum(view.compact()._handle, out._handle, view.shape[-1])
+	
+	return out
+
+def max(self, axis=None, keepdims=False):
+	if isinstance(axis, int):
+		view, out = self.reduce_view_out(axis, keepdims=keepdims)
+		self.device.reduce_max(view.compact()._handle, out._handle, view.shape[-1])
+	elif isinstance(axis, (tuple, list)):
+		for axis_ in axis:
+			view, out = self.reduce_view_out(axis_, keepdims=keepdims)
+			self.device.reduce_max(view.compact()._handle, out._handle, view.shape[-1])
+	else:
+		view, out = self.reduce_view_out(axis, keepdims=keepdims)
+		self.device.reduce_max(view.compact()._handle, out._handle, view.shape[-1])
+	
+	return out
+```
+
+- 在 reshape 之前，要调用 compact
+- 在创建 Tensor 时，要确保其与其它数据的 device 相同
+- 在 `autograd.py` 中，有一行代码为 `__rsub__ = __sub__`，其将 Tensor 的 rsub 方法重定向到了 sub 上，然而减法不具备交换律，该行代码是错误的。需要注释该行，并自行定义 rsub 函数。
+
+```python
+def __rsub__(self, other):
+	return needle.ops.AddScalar(other)(needle.ops.Negate()(self))
+```
+
+然后我们来实现新增的三个 op。
+
+- tanh  
+tanh 在我们实现的 backend 中已经有对应的接口了，正向传播直接调用即可。tanh 反向传播公式为：
+
+{{< math_block >}}
+\tanh^\prime(x) = 1-\tanh^2(x)
+{{< /math_block >}}
+
+反向传播中直接用 1 减去 node 的平方即可。需要注意，这里有一个上面提到的坑，也就是要自定义 rsub 函数。
+
+```python
+class Tanh(TensorOp):
+    def compute(self, a):
+        ### BEGIN YOUR SOLUTION
+        return array_api.tanh(a)
+        ### END YOUR SOLUTION
+
+    def gradient(self, out_grad, node):
+        ### BEGIN YOUR SOLUTION
+        return out_grad * (1 - node ** 2)
+        ### END YOUR SOLUTION
+
+```
+
+- stack  
+stack 函数是将多个相同 shape 的 Tensor 堆叠起来，并且会产生一个新的维度。正向传播实现的思路是先分配一个目标 shape 的 Tensor，然后通过赋值运算将他们放到目标位置。这里预分配时 Tensor 需要指定 device 与输入的 Tensor device 一致。反向传播调用逆运算 split。
+
+```python
+class Stack(TensorOp):
+    def __init__(self, axis: int):
+        """
+        Concatenates a sequence of arrays along a new dimension.
+        Parameters:
+        axis - dimension to concatenate along
+        All arrays need to be of the same size.
+        """
+        self.axis = axis
+
+    def compute(self, args: TensorTuple) -> Tensor:
+        ### BEGIN YOUR SOLUTION
+        if len(args) > 0:
+            shape = args[0].shape
+            for arg in args:
+                assert arg.shape == shape, "The shape of all tensors should be the same"
+            ret_shape = list(shape)
+            ret_shape.insert(self.axis, len(args))
+            ret = array_api.empty(ret_shape, device=args[0].device)
+            for i, arg in enumerate(args):
+                slices = [slice(None)] * len(ret_shape)
+                slices[self.axis] = i
+                ret[tuple(slices)] = arg
+            return ret
+        ### END YOUR SOLUTION
+
+
+    def gradient(self, out_grad, node):
+        ### BEGIN YOUR SOLUTION
+        return split(out_grad, self.axis)
+        ### END YOUR SOLUTION
+```
+
+- split  
+split 方法是将指定的一个维度全部拆开，需要注意的是拆开之后的维度不需要 keep dim，也就是要进行一次 reshape 操作，而在 reshape 前是需要显式调用 compact 的。反向传播直接调用 stack 方法即可。
+
+```python
+class Split(TensorTupleOp):
+    def __init__(self, axis: int):
+        """
+        Splits a tensor along an axis into a tuple of tensors.
+        (The "inverse" of Stack)
+        Parameters:
+        axis - dimension to split
+        """
+        self.axis = axis
+
+    def compute(self, A):
+        ### BEGIN YOUR SOLUTION
+        ret = []
+        ret_shape = list(A.shape)
+        ret_shape.pop(self.axis)
+        for i in range(A.shape[self.axis]):
+            slices = [slice(None)] * len(A.shape)
+            slices[self.axis] = i
+            ret.append((A[tuple(slices)]).compact().reshape(ret_shape))
+        return tuple(ret)
+        ### END YOUR SOLUTION
+
+    def gradient(self, out_grad, node):
+        ### BEGIN YOUR SOLUTION
+        return stack(out_grad, self.axis)
+        ### END YOUR SOLUTION
+
+
+def split(a, axis):
+    return Split(axis)(a)
+```
+
+## Part 2: CIFAR-10 dataset
+
+在本 Part 中，将完成对 CIFAR-10 数据库的解析。首先从之前的 hw 中复制 `python/needle/data/data_transforms.py` 和 `python/needle/data/data_basic.py` 两个文件，并修改 `data_basic` 中 `DataLoader::__next__` 方法为：
+
+```python
+def __next__(self):
+	if self.index >= len(self.ordering):
+		raise StopIteration
+	else:
+		batch = [Tensor(x) for x in self.dataset[self.ordering[self.index]]]
+		self.index += 1
+		return batch
+```
+
+在之前 hw 中使用 `Tensor.make_const` 来实现，但其不会根据当前的 backend 自动切换 cached_data 的数据结构。
+
+CIFAR-10 的数据格式参考 [CIFAR-10 and CIFAR-100 datasets](https://web.archive.org/web/20240827001314/https://www.cs.toronto.edu/~kriz/cifar.html)，简单来说，按照 `batch, channel, height, width` 的格式排列。`__init__` 方法实现参考网站上已经给出的代码读取数据集，然后进行 reshape 和归一化的操作即可，另外两个方法可以直接写出来。
+
+```python
+class CIFAR10Dataset(Dataset):
+    def __init__(
+        self,
+        base_folder: str,
+        train: bool,
+        p: Optional[int] = 0.5,
+        transforms: Optional[List] = None
+    ):
+        """
+        Parameters:
+        base_folder - cifar-10-batches-py folder filepath
+        train - bool, if True load training dataset, else load test dataset
+        Divide pixel values by 255. so that images are in 0-1 range.
+        Attributes:
+        X - numpy array of images
+        y - numpy array of labels
+        """
+        ### BEGIN YOUR SOLUTION
+        train_names = ['data_batch_1', 'data_batch_2', 'data_batch_3', 'data_batch_4', 'data_batch_5']
+        test_names = ['test_batch']
+        names = train_names if train else test_names
+        dicts = []
+        for name in names:
+            with open(os.path.join(base_folder, name), 'rb') as f:
+                dicts.append(pickle.load(f, encoding='bytes'))
+        self.X = np.concatenate([d[b'data'] for d in dicts], axis=0).reshape(-1, 3, 32, 32)
+        self.X = self.X / 255.0
+        self.y = np.concatenate([d[b'labels'] for d in dicts], axis=0)
+        
+        ### END YOUR SOLUTION
+
+    def __getitem__(self, index) -> object:
+        """
+        Returns the image, label at given index
+        Image should be of shape (3, 32, 32)
+        """
+        ### BEGIN YOUR SOLUTION
+        return self.X[index], self.y[index]
+        ### END YOUR SOLUTION
+
+    def __len__(self) -> int:
+        """
+        Returns the total number of examples in the dataset
+        """
+        ### BEGIN YOUR SOLUTION
+        return len(self.X)
+        ### END YOUR SOLUTION
+```
+
 # 参考文档
 
 [^1]: [zhuanlan.zhihu.com/p/579465666](https://zhuanlan.zhihu.com/p/579465666)
+[^2]: [CMU10414/hw4 at main · woaixiaoxiao/CMU10414 · GitHub](https://github.com/woaixiaoxiao/CMU10414/tree/main/hw4)

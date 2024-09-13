@@ -4,7 +4,7 @@ tags:
   - CUDA
   - 深度学习系统
 date: 2024-06-06T13:28:00+08:00
-lastmod: 2024-09-09T16:18:00+08:00
+lastmod: 2024-09-09T23:31:00+08:00
 publish: true
 dir: notes
 slug: notes on cmu 10-414 assignments
@@ -2624,6 +2624,414 @@ class CIFAR10Dataset(Dataset):
         return len(self.X)
         ### END YOUR SOLUTION
 ```
+
+## Part 3: Convolutional neural network
+
+在本 Part 中，我们将首先实现一些算子，然后实现一个 CNN 网络并在 CIFAR 数据集上进行训练。
+
+- pad  
+pad 操作逻辑为：首先计算出 out 的 shape，创建一个大小为 shape 的全零 Tensor，然后通过切片将原矩阵赋值到对应位置：
+
+```python
+def pad(self, axes):
+	out_shape = tuple(self.shape[i] + axes[i][0] + axes[i][1] for i in range(len(self.shape)))
+	out = self.device.full(out_shape, 0)
+	slices = tuple(slice(axes[i][0], axes[i][0] + self.shape[i]) for i in range(len(self.shape)))
+	out[slices] = self
+	return out
+```
+
+- flip  
+很难解释为什么，但是 flip 操作通过负 strides 和正 offset 就可以实现。具体来说，将需要 flip 的维度的 stride 值取负，offset 值等于需要 flip 的维度的 strides 乘 shape-1 然后求和。可以结合代码理解上面这段话：
+
+```python
+# ndarray.py
+def flip(self, axes):
+	assert isinstance(axes, tuple), "axes must be a tuple"
+	
+	strides = tuple(self.strides[i] if i not in axes else -self.strides[i] for i in range(len(self.shape)))
+	sum = __builtins__["sum"]
+	offset = sum((self.shape[i] - 1) * self.strides[i] for i in range(len(self.shape)) if i in axes)
+	out = NDArray.make(self.shape, strides=strides, device=self.device, handle=self._handle, offset=offset).compact()
+	return out
+
+# ops_mathematic.py
+class Flip(TensorOp):
+    def __init__(self, axes: Optional[tuple] = None):
+        if isinstance(axes, int):
+            axes = (axes,)
+        if isinstance(axes, list):
+            axes = tuple(axes)
+        self.axes = axes
+
+    def compute(self, a):
+        ### BEGIN YOUR SOLUTION
+        return array_api.flip(a, self.axes)
+        ### END YOUR SOLUTION
+
+    def gradient(self, out_grad, node):
+        ### BEGIN YOUR SOLUTION
+        return flip(out_grad, self.axes)
+        ### END YOUR SOLUTION
+```
+
+通过操纵 offset 和 strides 实现 flip 在数学角度应该是可以证明的，此处不表。
+
+- dilate/undilate  
+dilate 操作之前没有接触过，但下边的公式很形象：
+
+{{< math_block >}}
+\begin{bmatrix}
+1 & 2 \\
+3 & 4
+\end{bmatrix}
+\Longrightarrow
+\begin{bmatrix}
+1 & 0 & 2 & 0 \\
+0 & 0 & 0 & 0 \\
+3 & 0 & 4 & 0 \\
+0 & 0 & 0 & 0
+\end{bmatrix}
+{{< /math_block >}}
+
+参数 `dilation` 就是 0 的个数。
+
+这个函数的实现思路与 flip 非常接近，先计算 out 的 shape，然后创建空矩阵，然后通过切片选择目标元素：
+
+```python
+class Dilate(TensorOp):
+    def __init__(self, axes: tuple, dilation: int):
+        self.axes = axes
+        self.dilation = dilation
+
+    def compute(self, a):
+        ### BEGIN YOUR SOLUTION
+        if self.dilation == 0:
+            return a
+        out_shape = list(a.shape)
+        for i in self.axes:
+            out_shape[i] *= self.dilation + 1
+        out = array_api.full(out_shape, 0, device=a.device)
+        slices = [slice(None)] * len(a.shape)
+        for dim in self.axes:
+            slices[dim] = slice(None, None, self.dilation+1)
+        out[tuple(slices)] = a
+        return out
+        ### END YOUR SOLUTION
+
+    def gradient(self, out_grad, node):
+        ### BEGIN YOUR SOLUTION
+        return undilate(out_grad, self.axes, self.dilation)
+        ### END YOUR SOLUTION
+
+
+def dilate(a, axes, dilation):
+    return Dilate(axes, dilation)(a)
+
+
+class UnDilate(TensorOp):
+    def __init__(self, axes: tuple, dilation: int):
+        self.axes = axes
+        self.dilation = dilation
+
+    def compute(self, a):
+        ### BEGIN YOUR SOLUTION
+        if self.dilation == 0:
+            return a
+        out_shape = list(a.shape)
+        for i in self.axes:
+            out_shape[i] //= self.dilation + 1
+        out = array_api.empty(out_shape, device=a.device)
+        slices = [slice(None)] * len(a.shape)
+        for dim in self.axes:
+            slices[dim] = slice(None, None, self.dilation+1)
+        out = a[tuple(slices)]
+        return out
+        ### END YOUR SOLUTION
+
+    def gradient(self, out_grad, node):
+        ### BEGIN YOUR SOLUTION
+        return dilate(out_grad, self.axes, self.dilation)
+        ### END YOUR SOLUTION
+
+
+def undilate(a, axes, dilation):
+    return UnDilate(axes, dilation)(a)
+```
+
+dilate 和 undilate 互为逆运算，在计算梯度时互相调用即可。
+
+- conv
+首先处理padding，不难发现，padding和conv之间具有结合性，即如下两行代码是等价的：
+```python
+conv(X, W, padding=n)
+
+conv(pad(X, n), W, padding=0)
+```
+
+因此，第一步就是将X进行pad，作为新的X。后面通过im2col技术和操作strides将X和W向量化，通过矩阵乘法来实现卷积。上述原理见课程笔记：[《CMU 10-414 deep learning system》学习笔记 | 周鑫的个人博客](https://www.zhouxin.space/notes/notes-on-cmu-10-414-deep-learning-system/#%e9%80%9a%e8%bf%87-im2col-%e6%9d%a5%e5%ae%9e%e7%8e%b0%e5%8d%b7%e7%a7%af-convolutions-via-im2col)。
+
+反向传播推导见博文：[2d 卷积梯度推导与实现 | 周鑫的个人博客](https://www.zhouxin.space/notes/2d-convolution-gradient-derivation-and-implementation/)
+
+实现Conv的代码中使用了较多的permute重排操作，如果用transpose来实现重排太麻烦了，倒不如直接实现个重排的TensorOp：
+```python
+class Permute(TensorOp):
+    def __init__(self, axes: tuple):
+        self.axes = axes
+
+    def compute(self, a):
+        ### BEGIN YOUR SOLUTION
+        return a.compact().permute(self.axes)
+        ### END YOUR SOLUTION
+
+    def gradient(self, out_grad, node):
+        ### BEGIN YOUR SOLUTION
+        a = node.inputs[0]
+        index = [0] * len(self.axes)
+        for i in range(len(self.axes)):
+            index[self.axes[i]] = i
+        return permute(out_grad, tuple(index))
+        ### END YOUR SOLUTION
+        
+def permute(a, axes):
+    return Permute(axes)(a)
+
+```
+
+最终实现的代码为：
+```python
+class Conv(TensorOp):
+    def __init__(self, stride: Optional[int] = 1, padding: Optional[int] = 0):
+        self.stride = stride
+        self.padding = padding
+
+    def compute(self, A, B):
+        ### BEGIN YOUR SOLUTION
+        assert len(A.shape) == 4, "The input tensor should be 4D"
+        assert len(B.shape) == 4, "The kernel tensor should be 4D"
+        A = A.compact()
+        B = B.compact()
+        batch_size, in_height, in_width, in_channel = A.shape
+        bs, hs, ws, cs = A.strides
+        kernel_height, kernel_width, in_channel, out_channel = B.shape
+        
+        
+        
+        pad_A = A.pad(((0, 0), (self.padding, self.padding), (self.padding, self.padding), (0, 0))).compact()
+        batch_size, in_height, in_width, in_channel = pad_A.shape
+        bs, hs, ws, cs = pad_A.strides
+        receiptive_field_shape = (batch_size, (in_height - kernel_height) // self.stride + 1, (in_width - kernel_width) // self.stride + 1, kernel_height, kernel_width, in_channel)
+        receiptive_field_strides = (bs, hs * self.stride, ws * self.stride, hs, ws, cs)
+        receiptive_field = pad_A.as_strided(receiptive_field_shape, receiptive_field_strides).compact()
+        reveiptive_vector = receiptive_field.reshape((receiptive_field.size //(kernel_height * kernel_width * in_channel), kernel_height * kernel_width * in_channel)).compact()
+        kernel_vector = B.reshape((kernel_height * kernel_width * in_channel, out_channel)).compact()
+        out = reveiptive_vector @ kernel_vector
+        out = out.reshape((batch_size, (in_height - kernel_height) // self.stride + 1, (in_width - kernel_width) // self.stride + 1, out_channel)).compact()
+        return out
+        ### END YOUR SOLUTION
+
+    def gradient(self, out_grad, node):
+        ### BEGIN YOUR SOLUTION
+        X, W = node.inputs
+        s, _, _, _ = W.shape
+        
+        # 计算X_grad
+        W_flipped = flip(W, (0, 1))
+        W_flipped_permuted = transpose(W_flipped, (2, 3)) # transpose 只支持两个维度的交换
+        outgrad_dilated = dilate(out_grad, (1, 2), self.stride - 1)
+        X_grad = conv(outgrad_dilated, W_flipped_permuted, padding=s - 1 - self.padding)
+        
+        # 计算W_grad
+        # outgrad_dilated = dilate(out_grad, (1, 2), self.stride - 1)
+        outgrad_dilated_permuted = permute(outgrad_dilated, (1, 2, 0, 3))
+        X_permuted = permute(X, (3, 1, 2, 0))
+        W_grad = conv(X_permuted, outgrad_dilated_permuted, padding=self.padding)
+        W_grad = permute(W_grad, (1, 2, 0, 3))
+        return X_grad, W_grad
+        ### END YOUR SOLUTION
+
+
+def conv(a, b, stride=1, padding=1):
+    return Conv(stride, padding)(a, b)
+```
+
+- nn.Conv
+这里将实现一个卷积层。由如下要求：输入输出的格式为(N,C,H,W)，padding应满足当stride=1时，输出不缩水，支持bias项。
+
+首先修改Kaming uniform的实现，使之支持对卷积核的初始化。增加一个逻辑，根据参数`shape`是否为None，在调用rand函数时传入不同的形状即可：
+```python
+def kaiming_uniform(fan_in, fan_out, shape=None, nonlinearity="relu", **kwargs):
+    assert nonlinearity == "relu", "Only relu supported currently"
+    ### BEGIN YOUR SOLUTION
+    if nonlinearity == "relu":
+        gain = math.sqrt(2)
+    ### BEGIN YOUR SOLUTION
+    bound = gain * math.sqrt(3 / fan_in)
+    if shape is None:
+        return rand(fan_in, fan_out, low=-bound, high=bound, **kwargs)
+    else:
+        return rand(*shape, low=-bound, high=bound, **kwargs)
+    ### END YOUR SOLUTION
+```
+
+hw4的代码中，对于`NDArray.sum`的实现有问题，当求和的维度指定为空tuple时，其不应该进行求和操作，但原始代码无法正确处理这种情况，需要参数axis类型为list或者tuple的分支进行额外的判断，如果为空list或者tuple，输出等于输入：
+```python
+def sum(self, axis=None, keepdims=False):
+	if isinstance(axis, int):
+		view, out = self.reduce_view_out(axis, keepdims=keepdims)
+		self.device.reduce_sum(view.compact()._handle, out._handle, view.shape[-1])
+	elif isinstance(axis, (tuple, list)):
+		if len(axis) == 0:
+			out = self
+		for axis_ in axis:
+			view, out = self.reduce_view_out(axis_, keepdims=keepdims)
+			self.device.reduce_sum(view.compact()._handle, out._handle, view.shape[-1])
+	else:
+		view, out = self.reduce_view_out(axis, keepdims=keepdims)
+		self.device.reduce_sum(view.compact()._handle, out._handle, view.shape[-1])
+	
+	return out
+```
+
+万事俱备，卷积层的实现调用上边的函数即可。初始化的部分，根据文档描述初始化好权重和偏执项。对于步长为1的卷积，卷积结果会缩水k-1行k-1列，为了确保shape不变，卷积时四周要pad (k-1)/2，又由于传统上k为奇数，因此等价于pad k/2。
+
+前向传播的部分，首先将X重排为NHWC的格式，然后加上卷积层。如果由偏执项，则将其广播后再加到结果中，最后将结果重排为NCHW格式返回即可。完整代码为：
+```python
+class Conv(Module):
+    """
+    Multi-channel 2D convolutional layer
+    IMPORTANT: Accepts inputs in NCHW format, outputs also in NCHW format
+    Only supports padding=same
+    No grouped convolution or dilation
+    Only supports square kernels
+    """
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, bias=True, device=None, dtype="float32"):
+        super().__init__()
+        if isinstance(kernel_size, tuple):
+            kernel_size = kernel_size[0]
+        if isinstance(stride, tuple):
+            stride = stride[0]
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.kernel_size = kernel_size
+        self.stride = stride
+
+        ### BEGIN YOUR SOLUTION
+        self.weight = Parameter(init.kaiming_uniform(self.in_channels, self.out_channels, shape=(kernel_size, kernel_size, in_channels, out_channels), device=device, dtype=dtype))
+        bias_bound = 1.0 / np.sqrt(in_channels * kernel_size * kernel_size)
+        self.bias = Parameter(init.rand(out_channels, low=-bias_bound, high=bias_bound, device=device, dtype=dtype)) if bias else None
+        self.padding = kernel_size // 2
+        ### END YOUR SOLUTION
+
+    def forward(self, x: Tensor) -> Tensor:
+        ### BEGIN YOUR SOLUTION
+        # convert NCHW to NHWC
+        x = ops.permute(x, [0, 2, 3, 1])
+        conv_x = ops.conv(x, self.weight, stride=self.stride, padding=self.padding)
+        if self.bias is not None:
+            broadcasted_bias = ops.broadcast_to(ops.reshape(self.bias, (1, 1, 1, self.out_channels)), conv_x.shape)
+            conv_x = conv_x + broadcasted_bias
+        out = ops.permute(conv_x, [0, 3, 1, 2])
+        return out
+```
+
+-  fd
+在实现TensorOp的子类时，如果需要初始化Tensor，一定要指定device。之前在实现ReLU生成mask时没有指定device，将导致反向传播失败，这里对其进行修改：
+```python
+class ReLU(TensorOp):
+    def compute(self, a):
+        ### BEGIN YOUR SOLUTION
+        return array_api.maximum(a, 0)
+        ### END YOUR SOLUTION
+
+    def gradient(self, out_grad, node):
+        ### BEGIN YOUR SOLUTION
+        relu_mask = Tensor(node.inputs[0].cached_data > 0, device=node.inputs[0].device)
+        return out_grad * relu_mask
+        ### END YOUR SOLUTION
+```
+
+同样，之前在实现SoftmaxLoss生成one hot时也没有指定device，这里需要修改：
+```python
+class SoftmaxLoss(Module):
+    def forward(self, logits: Tensor, y: Tensor):
+        ### BEGIN YOUR SOLUTION
+        batch_size, label_size = logits.shape
+        one_hot_y = init.one_hot(label_size, y, device=logits.device)
+        true_logits = ops.summation(logits * one_hot_y, axes=(1,))
+        return (ops.logsumexp(logits, axes=(1, )) - true_logits).sum()/batch_size
+        ### END YOUR SOLUTION
+```
+
+此外，还发现在reshape操作可能没有调用compact，这里直接修改其实现，在调用array_api前进行compact操作：
+```python
+class Reshape(TensorOp):
+    def __init__(self, shape):
+        self.shape = shape
+
+    def compute(self, a):
+        ### BEGIN YOUR SOLUTION
+        expect_size = 1
+        for i in self.shape:
+            expect_size *= i
+        real_size = 1
+        for i in a.shape:
+            real_size *= i
+        assert expect_size == real_size , "The reshape size is not compatible"
+        return array_api.reshape(a.compact(), self.shape)
+        ### END YOUR SOLUTION
+```
+
+经过一番小修小补，我们的代码已经相当健壮，足以完成这个ResNet 9🎉。ResNet 9网络架构如下所示。写代码的过程中有些漏洞咱也没必要妄自菲薄，毕竟这么厉害的两位大佬也难免有笔误的地方。下图中的ResNet 9有一层网络架构写错了，已在原图中指出。
+![image.png](https://pics.zhouxin.space/202409132043485.png?x-oss-process=image/quality,q_90/format,webp)
+首先来实现ConvBN，传入的四个参数以此为channels_in，channels_out，kernel_size和stride。hw4的框架代码中提供了BatchNorm2d，在拷贝`nn_basic.py`文件时不要直接覆盖。剩余的实现很简单，根据示意图搭积木，运行后哪里报Not Implemented Error就补哪里，完整代码为：
+```python
+class ResNet9(ndl.nn.Module):
+    def __init__(self, device=None, dtype="float32"):
+        super().__init__()
+        bias = True
+        ### BEGIN YOUR SOLUTION ###
+        self.conv1 = ConvBN(3, 16, 7, 4, bias=bias, device=device, dtype=dtype)
+        self.conv2 = ConvBN(16, 32, 3, 2, bias=bias, device=device, dtype=dtype)
+        self.res = ndl.nn.Residual(
+            ndl.nn.Sequential(
+                ConvBN(32, 32, 3, 1, bias=bias, device=device, dtype=dtype),
+                ConvBN(32, 32, 3, 1, bias=bias, device=device, dtype=dtype)
+            )
+        )
+        self.conv3 = ConvBN(32, 64, 3, 2, bias=bias, device=device, dtype=dtype)
+        self.conv4 = ConvBN(64, 128, 3, 2, bias=bias, device=device, dtype=dtype)
+        self.res2 = ndl.nn.Residual(
+            ndl.nn.Sequential(
+                ConvBN(128, 128, 3, 1, bias=bias, device=device, dtype=dtype),
+                ConvBN(128, 128, 3, 1, bias=bias, device=device, dtype=dtype)
+            )
+        )
+        self.flatten = ndl.nn.Flatten()
+        self.linear = ndl.nn.Linear(128, 128, bias=bias, device=device, dtype=dtype)
+        self.relu = ndl.nn.ReLU()
+        self.linear2 = ndl.nn.Linear(128, 10, bias=bias, device=device, dtype=dtype)
+        ### END YOUR SOLUTION
+
+    def forward(self, x):
+        ### BEGIN YOUR SOLUTION
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = self.res(x)
+        x = self.conv3(x)
+        x = self.conv4(x)
+        x = self.res2(x)
+        x = self.flatten(x)
+        x = self.linear(x)
+        x = self.relu(x)
+        x = self.linear2(x)
+        return x
+        ### END YOUR SOLUTION
+```
+
+很遗憾，上述代码在我的设备上并不能通过ResNet 9的测试点，误差为0.09，远超tolerance 0.01。但其又能通过后续在CIFAR 10训练集上训练2 epoches的测试点，且误差为5e-5，远小于tolerance 0.01。怀疑前一个测试点数据有问题。
+
+
 
 # 参考文档
 

@@ -4,7 +4,7 @@ tags:
   - CUDA
   - 深度学习系统
 date: 2024-05-28T12:24:00+08:00
-lastmod: 2024-09-08T20:38:00+08:00
+lastmod: 2024-09-14T09:03:00+08:00
 publish: true
 dir: notes
 slug: notes on cmu 10-414 deep learning system
@@ -29,7 +29,7 @@ math: "true"
 
 本门课程的核心内容在 Lecture 0~15，对应的 homework 是 hw0~3，后面的内容没有时间可以跳过。
 
-ps：全文章两万余字，Chrome渲染图片时可能会很卡，建议使用Microsoft Edge浏览。
+ps：全文章两万余字，Chrome 渲染图片时可能会很卡，建议使用 Microsoft Edge 浏览。
 
 # Lecture 1: Introduction and Logistics
 
@@ -1678,7 +1678,7 @@ LSTM一定程度上减轻了RNN中存在的梯度消失和爆炸问题。LSTM在
 
 $W_{hh},W_{hx}\in \mathbb{R}^{4d\times d}$意味着，计算中间变量的权重彼此都是独立的。
 
-	？？？？！！！这公式怎么来的，为啥子这个公式管用？有很多工作试图对此进行解释，但大多是一家之言。Zico Kolter教授对此的解释是：$g_t$在经过sigmoid以后是一个0-1变量，用于决定是否要保留前一状态对应位置的cell state信息，$i_t$同样是个0-1变量，而$g_t$是个有界项，这一组合决定了是否要在cell state的位置上添加一些额外的信息；$h_t$的更新公式则是一个有界变量，其作用是防止梯度爆炸或者消失。
+？？？？！！！这公式怎么来的，为啥子这个公式管用？有很多工作试图对此进行解释，但大多是一家之言。Zico Kolter教授对此的解释是：$g_t$在经过sigmoid以后是一个0-1变量，用于决定是否要保留前一状态对应位置的cell state信息，$i_t$同样是个0-1变量，而$g_t$是个有界项，这一组合决定了是否要在cell state的位置上添加一些额外的信息；$h_t$的更新公式则是一个有界变量，其作用是防止梯度爆炸或者消失。
 ## Beyond "simple" sequential models
 除了对序列数据进行建模，RNN能做的还有很多。例如，翻译句子，有一种sequence to sequence架构采用了两个RNN模型，一个用于输入原始句子，提取中间状态，另一个用于根据最后一个中间状态，输出翻译后的句子。
 ![image.png](https://pics.zhouxin.space/202409042233558.png?x-oss-process=image/quality,q_90/format,webp)

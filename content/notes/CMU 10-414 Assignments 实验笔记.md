@@ -4,7 +4,7 @@ tags:
   - CUDA
   - 深度学习系统
 date: 2024-06-06T13:28:00+08:00
-lastmod: 2024-09-09T23:31:00+08:00
+lastmod: 2024-09-14T17:18:00+08:00
 publish: true
 dir: notes
 slug: notes on cmu 10-414 assignments
@@ -2761,19 +2761,21 @@ def undilate(a, axes, dilation):
 
 dilate 和 undilate 互为逆运算，在计算梯度时互相调用即可。
 
-- conv
-首先处理padding，不难发现，padding和conv之间具有结合性，即如下两行代码是等价的：
+- conv  
+首先处理 padding，不难发现，padding 和 conv 之间具有结合性，即如下两行代码是等价的：
+
 ```python
 conv(X, W, padding=n)
 
 conv(pad(X, n), W, padding=0)
 ```
 
-因此，第一步就是将X进行pad，作为新的X。后面通过im2col技术和操作strides将X和W向量化，通过矩阵乘法来实现卷积。上述原理见课程笔记：[《CMU 10-414 deep learning system》学习笔记 | 周鑫的个人博客](https://www.zhouxin.space/notes/notes-on-cmu-10-414-deep-learning-system/#%e9%80%9a%e8%bf%87-im2col-%e6%9d%a5%e5%ae%9e%e7%8e%b0%e5%8d%b7%e7%a7%af-convolutions-via-im2col)。
+因此，第一步就是将 X 进行 pad，作为新的 X。后面通过 im2col 技术和操作 strides 将 X 和 W 向量化，通过矩阵乘法来实现卷积。上述原理见课程笔记：[《CMU 10-414 deep learning system》学习笔记 | 周鑫的个人博客](https://www.zhouxin.space/notes/notes-on-cmu-10-414-deep-learning-system/#%e9%80%9a%e8%bf%87-im2col-%e6%9d%a5%e5%ae%9e%e7%8e%b0%e5%8d%b7%e7%a7%af-convolutions-via-im2col)。
 
 反向传播推导见博文：[2d 卷积梯度推导与实现 | 周鑫的个人博客](https://www.zhouxin.space/notes/2d-convolution-gradient-derivation-and-implementation/)
 
-实现Conv的代码中使用了较多的permute重排操作，如果用transpose来实现重排太麻烦了，倒不如直接实现个重排的TensorOp：
+实现 Conv 的代码中使用了较多的 permute 重排操作，如果用 transpose 来实现重排太麻烦了，倒不如直接实现个重排的 TensorOp：
+
 ```python
 class Permute(TensorOp):
     def __init__(self, axes: tuple):
@@ -2799,6 +2801,7 @@ def permute(a, axes):
 ```
 
 最终实现的代码为：
+
 ```python
 class Conv(TensorOp):
     def __init__(self, stride: Optional[int] = 1, padding: Optional[int] = 0):
@@ -2855,10 +2858,11 @@ def conv(a, b, stride=1, padding=1):
     return Conv(stride, padding)(a, b)
 ```
 
-- nn.Conv
-这里将实现一个卷积层。由如下要求：输入输出的格式为(N,C,H,W)，padding应满足当stride=1时，输出不缩水，支持bias项。
+- nn.Conv  
+这里将实现一个卷积层。由如下要求：输入输出的格式为 (N,C,H,W)，padding 应满足当 stride=1 时，输出不缩水，支持 bias 项。
 
-首先修改Kaming uniform的实现，使之支持对卷积核的初始化。增加一个逻辑，根据参数`shape`是否为None，在调用rand函数时传入不同的形状即可：
+首先修改 Kaming uniform 的实现，使之支持对卷积核的初始化。增加一个逻辑，根据参数 `shape` 是否为 None，在调用 rand 函数时传入不同的形状即可：
+
 ```python
 def kaiming_uniform(fan_in, fan_out, shape=None, nonlinearity="relu", **kwargs):
     assert nonlinearity == "relu", "Only relu supported currently"
@@ -2874,7 +2878,8 @@ def kaiming_uniform(fan_in, fan_out, shape=None, nonlinearity="relu", **kwargs):
     ### END YOUR SOLUTION
 ```
 
-hw4的代码中，对于`NDArray.sum`的实现有问题，当求和的维度指定为空tuple时，其不应该进行求和操作，但原始代码无法正确处理这种情况，需要参数axis类型为list或者tuple的分支进行额外的判断，如果为空list或者tuple，输出等于输入：
+hw4 的代码中，对于 `NDArray.sum` 的实现有问题，当求和的维度指定为空 tuple 时，其不应该进行求和操作，但原始代码无法正确处理这种情况，需要参数 axis 类型为 list 或者 tuple 的分支进行额外的判断，如果为空 list 或者 tuple，输出等于输入：
+
 ```python
 def sum(self, axis=None, keepdims=False):
 	if isinstance(axis, int):
@@ -2893,9 +2898,10 @@ def sum(self, axis=None, keepdims=False):
 	return out
 ```
 
-万事俱备，卷积层的实现调用上边的函数即可。初始化的部分，根据文档描述初始化好权重和偏执项。对于步长为1的卷积，卷积结果会缩水k-1行k-1列，为了确保shape不变，卷积时四周要pad (k-1)/2，又由于传统上k为奇数，因此等价于pad k/2。
+万事俱备，卷积层的实现调用上边的函数即可。初始化的部分，根据文档描述初始化好权重和偏执项。对于步长为 1 的卷积，卷积结果会缩水 k-1 行 k-1 列，为了确保 shape 不变，卷积时四周要 pad (k-1)/2，又由于传统上 k 为奇数，因此等价于 pad k/2。
 
-前向传播的部分，首先将X重排为NHWC的格式，然后加上卷积层。如果由偏执项，则将其广播后再加到结果中，最后将结果重排为NCHW格式返回即可。完整代码为：
+前向传播的部分，首先将 X 重排为 NHWC 的格式，然后加上卷积层。如果由偏执项，则将其广播后再加到结果中，最后将结果重排为 NCHW 格式返回即可。完整代码为：
+
 ```python
 class Conv(Module):
     """
@@ -2935,8 +2941,9 @@ class Conv(Module):
         return out
 ```
 
--  fd
-在实现TensorOp的子类时，如果需要初始化Tensor，一定要指定device。之前在实现ReLU生成mask时没有指定device，将导致反向传播失败，这里对其进行修改：
+-  ResNet 9  
+在实现 TensorOp 的子类时，如果需要初始化 Tensor，一定要指定 device。之前在实现 ReLU 生成 mask 时没有指定 device，将导致反向传播失败，这里对其进行修改：
+
 ```python
 class ReLU(TensorOp):
     def compute(self, a):
@@ -2951,7 +2958,8 @@ class ReLU(TensorOp):
         ### END YOUR SOLUTION
 ```
 
-同样，之前在实现SoftmaxLoss生成one hot时也没有指定device，这里需要修改：
+同样，之前在实现 SoftmaxLoss 生成 one hot 时也没有指定 device，这里需要修改：
+
 ```python
 class SoftmaxLoss(Module):
     def forward(self, logits: Tensor, y: Tensor):
@@ -2963,7 +2971,8 @@ class SoftmaxLoss(Module):
         ### END YOUR SOLUTION
 ```
 
-此外，还发现在reshape操作可能没有调用compact，这里直接修改其实现，在调用array_api前进行compact操作：
+此外，还发现在 reshape 操作可能没有调用 compact，这里直接修改其实现，在调用 array_api 前进行 compact 操作：
+
 ```python
 class Reshape(TensorOp):
     def __init__(self, shape):
@@ -2982,9 +2991,10 @@ class Reshape(TensorOp):
         ### END YOUR SOLUTION
 ```
 
-经过一番小修小补，我们的代码已经相当健壮，足以完成这个ResNet 9🎉。ResNet 9网络架构如下所示。写代码的过程中有些漏洞咱也没必要妄自菲薄，毕竟这么厉害的两位大佬也难免有笔误的地方。下图中的ResNet 9有一层网络架构写错了，已在原图中指出。
-![image.png](https://pics.zhouxin.space/202409132043485.png?x-oss-process=image/quality,q_90/format,webp)
-首先来实现ConvBN，传入的四个参数以此为channels_in，channels_out，kernel_size和stride。hw4的框架代码中提供了BatchNorm2d，在拷贝`nn_basic.py`文件时不要直接覆盖。剩余的实现很简单，根据示意图搭积木，运行后哪里报Not Implemented Error就补哪里，完整代码为：
+经过一番小修小补，我们的代码已经相当健壮，足以完成这个 ResNet 9🎉。ResNet 9 网络架构如下所示。写代码的过程中有些漏洞咱也没必要妄自菲薄，毕竟这么厉害的两位大佬也难免有笔误的地方。下图中的 ResNet 9 有一层网络架构写错了，已在原图中指出。  
+![image.png](https://pics.zhouxin.space/202409132043485.png?x-oss-process=image/quality,q_90/format,webp)  
+首先来实现 ConvBN，传入的四个参数以此为 channels_in，channels_out，kernel_size 和 stride。hw4 的框架代码中提供了 BatchNorm2d，在拷贝 `nn_basic.py` 文件时不要直接覆盖。剩余的实现很简单，根据示意图搭积木，运行后哪里报 Not Implemented Error 就补哪里，完整代码为：
+
 ```python
 class ResNet9(ndl.nn.Module):
     def __init__(self, device=None, dtype="float32"):
@@ -3029,9 +3039,355 @@ class ResNet9(ndl.nn.Module):
         ### END YOUR SOLUTION
 ```
 
-很遗憾，上述代码在我的设备上并不能通过ResNet 9的测试点，误差为0.09，远超tolerance 0.01。但其又能通过后续在CIFAR 10训练集上训练2 epoches的测试点，且误差为5e-5，远小于tolerance 0.01。怀疑前一个测试点数据有问题。
+很遗憾，上述代码在我的设备上并不能通过 ResNet 9 的测试点，误差为 0.09，远超 tolerance 0.01。但其又能通过后续在 CIFAR 10 训练集上训练 2 epoches 的测试点，且误差为 5e-5，远小于 tolerance 0.01。怀疑前一个测试点数据有问题。
+
+## Part 4: Recurrent neural network
+
+- RNN Cell  
+RNN cell 似乎没有什么坑，照着文档初始化参数，照着公式进行正向传播：
+
+```python
+class RNNCell(Module):
+    def __init__(self, input_size, hidden_size, bias=True, nonlinearity='tanh', device=None, dtype="float32"):
+        super().__init__()
+        ### BEGIN YOUR SOLUTION
+        bound = 1 / np.sqrt(hidden_size)
+        self.W_ih = Parameter(init.rand(input_size, hidden_size, low=-bound, high=bound, device=device, dtype=dtype))
+        self.W_hh = Parameter(init.rand(hidden_size, hidden_size, low=-bound, high=bound, device=device, dtype=dtype))
+        self.bias_ih = Parameter(init.rand(hidden_size, low=-bound, high=bound, device=device, dtype=dtype)) if bias else None
+        self.bias_hh = Parameter(init.rand(hidden_size, low=-bound, high=bound, device=device, dtype=dtype)) if bias else None
+        self.nonlinearity = ops.tanh if nonlinearity == 'tanh' else ops.relu
+        ### END YOUR SOLUTION
+
+    def forward(self, X, h=None):
+        ### BEGIN YOUR SOLUTION
+        if h is None:
+            h = init.zeros(X.shape[0], self.W_hh.shape[0], device=X.device, dtype=X.dtype)
+        Z = X@self.W_ih + h@self.W_hh
+        if self.bias_ih:
+            bias = self.bias_ih + self.bias_hh
+            bias = bias.reshape((1, bias.shape[0]))
+            bias = bias.broadcast_to(Z.shape)
+            Z += bias
+        return self.nonlinearity(Z)
+        ### END YOUR SOLUTION
+```
+
+- RNN  
+本节任务是完成一个多层 RNN，即堆叠在一起的 RNN，如下图所示。参数中 `num_layers` 指定了层数，`input_size` 指的是最下面那层 RNN 的输入的 x 的 size，除底层之外的 cell 的输入都是前一层的输入，即它们的 input_size = hidden_size  
+![image.png](https://pics.zhouxin.space/202409041908220.png?x-oss-process=image/quality,q_90/format,webp)
+
+由上图，可知每一层的输入都是在变化的，因此考虑维护一个 `X_input` 列表用于存储当前没计算的 cell 的垂直输入。同样，维护一个 `h_input` 列表存储当前没计算的 cell 的水平输入。具体来说，当计算的 cell 编号为 $h_i^j$ 时，其用到的输入为 `X_input[i]` 和 `h_input[j]`，同时计算结束后 `X_input[j]` 和 `h_input[j]` 都要更新为该节点的输出。
+
+对于这个堆叠在一起的 RNN，可以采用从左往右、从下到上，或者从下到上、从左往右的计算方式。我采用的是先垂直再水平的计算顺序。
+
+模型最后要返回两个变量，一个是最后一层的输出 output，即示意图中的 y 的集合，不难发现最后一层的输出就是最后一层的后一层（假设存在）的垂直输入，即我们一直在维护的 `X_input`。另一个要返回的变量是最后一列隐藏层，同样，这就是我们一直在维护的水平输入 `h_input`。水到渠成。
+
+需要注意，Tensor 没有实现 getitem 和 setitem 方法，需要切片存取的时候调用之前实现的 split 和 stack 方法即可。
+
+完整代码为：
+
+```python
+class RNN(Module):
+    def __init__(self, input_size, hidden_size, num_layers=1, bias=True, nonlinearity='tanh', device=None, dtype="float32"):
+        super().__init__()
+        ### BEGIN YOUR SOLUTION
+        self.rnn_cells = []
+        self.rnn_cells.append(RNNCell(input_size, hidden_size, bias, nonlinearity, device, dtype))
+        for i in range(1, num_layers):
+            self.rnn_cells.append(RNNCell(hidden_size, hidden_size, bias, nonlinearity, device, dtype))
+        ### END YOUR SOLUTION
+
+    def forward(self, X, h0=None):
+        ### BEGIN YOUR SOLUTION
+        seq_len = X.shape[0]
+        layer_num = len(self.rnn_cells)
+        if h0 is None:
+            h0 = init.zeros(len(self.rnn_cells), X.shape[1], self.rnn_cells[0].W_hh.shape[0], device=X.device, dtype=X.dtype)
+        h_input = list(ops.split(h0, 0)) # list length = num_layers, element shape = (bs, hidden_size)
+        X_input = list(ops.split(X, 0)) # list length = seq_len, element shape = (bs, input_size)
+        for i in range(seq_len):
+            for j in range(layer_num):
+                X_input[i] = self.rnn_cells[j](X_input[i], h_input[j])
+                h_input[j] = X_input[i]
+        output = ops.stack(X_input, 0) # output features of last layer == input X of last+1 layer
+        h_n = ops.stack(h_input, 0)
+        return output, h_n
+        
+            
+        ### END YOUR SOLUTION
+
+```
+
+## Part 5: LSTM
+
+本章节将实现 LSTM，LSTM 和上边的 RNN 逻辑相同，照抄公式，这里直接放出代码：
+
+```python
+class LSTMCell(Module):
+    def __init__(self, input_size, hidden_size, bias=True, device=None, dtype="float32"):
+        super().__init__()
+        ### BEGIN YOUR SOLUTION
+        bound = 1.0 / np.sqrt(hidden_size)
+        self.W_ih = Parameter(init.rand(input_size, 4*hidden_size, low=-bound, high=bound, device=device, dtype=dtype))
+        self.W_hh = Parameter(init.rand(hidden_size, 4*hidden_size, low=-bound, high=bound, device=device, dtype=dtype))
+        self.bias_ih = Parameter(init.rand(4*hidden_size, low=-bound, high=bound, device=device, dtype=dtype)) if bias else None
+        self.bias_hh = Parameter(init.rand(4*hidden_size, low=-bound, high=bound, device=device, dtype=dtype)) if bias else None
+        self.sigmoid = Sigmoid()
+        ### END YOUR SOLUTION
 
 
+    def forward(self, X, h=None):
+        ### BEGIN YOUR SOLUTION
+        bs = X.shape[0]
+        hidden_size = self.W_hh.shape[0]
+        if h is None:
+            h0 = init.zeros(bs, hidden_size, device=X.device, dtype=X.dtype)
+            c0 = init.zeros(bs, hidden_size, device=X.device, dtype=X.dtype)
+        else:
+            h0, c0 = h
+        Z = X@self.W_ih + h0@self.W_hh # [bs, 4*hidden_size]
+        if self.bias_ih:
+            bias = self.bias_ih + self.bias_hh
+            bias = bias.reshape((1, bias.shape[0]))
+            bias = bias.broadcast_to(Z.shape)
+            Z += bias
+        stripes = list(ops.split(Z, 1))
+        i = self.sigmoid(ops.stack(stripes[0: hidden_size], 1))
+        f = self.sigmoid(ops.stack(stripes[hidden_size: 2*hidden_size], 1))
+        g = ops.tanh(ops.stack(stripes[2*hidden_size: 3*hidden_size], 1))
+        o = self.sigmoid(ops.stack(stripes[3*hidden_size: 4*hidden_size], 1))
+        c = f * c0 + i * g
+        h = o * ops.tanh(c)
+        return h, c
+        
+        ### END YOUR SOLUTION
+
+
+class LSTM(Module):
+    def __init__(self, input_size, hidden_size, num_layers=1, bias=True, device=None, dtype="float32"):
+        super().__init__()
+        ### BEGIN YOUR SOLUTION
+        self.lstm_cells = []
+        self.lstm_cells.append(LSTMCell(input_size, hidden_size, bias, device, dtype))
+        for i in range(1, num_layers):
+            self.lstm_cells.append(LSTMCell(hidden_size, hidden_size, bias, device, dtype))
+        ### END YOUR SOLUTION
+
+    def forward(self, X, h=None):
+        ### BEGIN YOUR SOLUTION
+        seq_len, bs, _ = X.shape
+        num_layers = len(self.lstm_cells)
+        hidden_size = self.lstm_cells[0].W_hh.shape[0]
+        if h is None:
+            h0 = init.zeros(num_layers, bs, hidden_size, device=X.device, dtype=X.dtype)
+            c0 = init.zeros(num_layers, bs, hidden_size, device=X.device, dtype=X.dtype)
+        else:
+            h0, c0 = h
+        h_input = list(ops.split(h0, 0))
+        c_input = list(ops.split(c0, 0))
+        X_input = list(ops.split(X, 0))
+        for i in range(seq_len):
+            for j in range(num_layers):
+                X_input[i], c_input[j] = self.lstm_cells[j](X_input[i], (h_input[j], c_input[j]))
+                h_input[j] = X_input[i]
+        output = ops.stack(X_input, 0)
+        h_n = ops.stack(h_input, 0)
+        c_n = ops.stack(c_input, 0)
+        return output, (h_n, c_n)
+        
+        ### END YOUR SOLUTION
+```
+
+## Part 6: Penn Treebank dataset
+
+- Dictionary  
+这个类的作用是构建一个从 word 到 id 双向映射的字典，word2idx 通过读取 `dict` 来实现，idx2word 通过访问 `list` 来实现：
+
+```python
+class Dictionary(object):
+    def __init__(self):
+        self.word2idx = {}
+        self.idx2word = []
+
+    def add_word(self, word):
+        ### BEGIN YOUR SOLUTION
+        if self.word2idx.get(word) is None:
+            self.word2idx[word] = len(self.idx2word)
+            self.idx2word.append(word)
+        return self.word2idx[word]
+        ### END YOUR SOLUTION
+
+    def __len__(self):
+        ### BEGIN YOUR SOLUTION
+        return len(self.idx2word)
+        ### END YOUR SOLUTION
+```
+
+- Corpus  
+这个类的作用类似于 DataLoader，从文件读取原始数据，通过 `Dictionary` 将其 tokenize，提供 `batchify` 将其分割为 batch（这个 batch 指的是输入的 x 中同时存在好几个句子），提供 `get_batch` 方法将单个句子分割为 batch（这是由于 lstm 的水平深度有限，最多同时接受这么多输入）。
+
+具体实现时参考 docstring 描述即可，由示意图，一目了然。完整代码为：
+
+```python
+class Corpus(object):
+    def __init__(self, base_dir, max_lines=None):
+        self.dictionary = Dictionary()
+        self.train = self.tokenize(os.path.join(base_dir, 'train.txt'), max_lines)
+        self.test = self.tokenize(os.path.join(base_dir, 'test.txt'), max_lines)
+
+    def tokenize(self, path, max_lines=None):
+        ### BEGIN YOUR SOLUTION
+        with open(path, 'r') as f:
+            ids = []
+            line_idx = 0
+            for line in f:
+                if max_lines is not None and line_idx >= max_lines:
+                    break
+                words = line.split() + ['<eos>']
+                for word in words:
+                    ids.append(self.dictionary.add_word(word))
+                line_idx += 1
+        return ids
+        ### END YOUR SOLUTION
+
+
+def batchify(data, batch_size, device, dtype):
+    ### BEGIN YOUR SOLUTION
+    data_len = len(data)
+    nbatch = data_len // batch_size
+    data = data[:nbatch * batch_size]
+    return np.array(data).reshape(batch_size, -1).T
+    ### END YOUR SOLUTION
+
+
+def get_batch(batches, i, bptt, device=None, dtype=None):
+    ### BEGIN YOUR SOLUTION
+    data = batches[i: i + bptt, :]
+    target = batches[i + 1: i + 1 + bptt, :]
+    return Tensor(data, device=device, dtype=dtype), Tensor(target.flatten(), device=device, dtype=dtype)
+    ### END YOUR SOLUTION
+```
+
+## Part 7: Training a word-level language model
+
+这里有个大坑，`ndarray` 实现的矩阵乘法不支持批量矩乘，如果由三维矩阵乘二维的情况，需要手动 reshape 再乘，再 reshape 回去。
+
+- Embedding  
+这个 Module 的作用是将 token 进行一次线性变换，这个操作涉及到批量矩乘：
+
+```python
+class Embedding(Module):
+    def __init__(self, num_embeddings, embedding_dim, device=None, dtype="float32"):
+        super().__init__()
+        ### BEGIN YOUR SOLUTION
+        self.weight = Parameter(init.randn(num_embeddings, embedding_dim, device=device, dtype=dtype))
+        ### END YOUR SOLUTION
+
+    def forward(self, x: Tensor) -> Tensor:
+        ### BEGIN YOUR SOLUTION
+        one_hot = init.one_hot(self.weight.shape[0], x, device=x.device, dtype=x.dtype)
+        seq_len, bs, num_embeddings = one_hot.shape
+        one_hot = one_hot.reshape((seq_len*bs, num_embeddings))
+        
+        return ops.matmul(one_hot, self.weight).reshape((seq_len, bs, self.weight.shape[1]))
+        ### END YOUR SOLUTION
+```
+
+- LanguageModel  
+搭积木，同样设计批量矩乘：
+
+```python
+class LanguageModel(nn.Module):
+    def __init__(self, embedding_size, output_size, hidden_size, num_layers=1,
+                 seq_model='rnn', device=None, dtype="float32"):
+        super(LanguageModel, self).__init__()
+        ### BEGIN YOUR SOLUTION
+        self.embedding = nn.Embedding(output_size, embedding_size, device=device, dtype=dtype)
+        if seq_model == 'rnn':
+            self.model = nn.RNN(embedding_size, hidden_size, num_layers, device=device, dtype=dtype)
+        elif seq_model == 'lstm':
+            self.model = nn.LSTM(embedding_size, hidden_size, num_layers, device=device, dtype=dtype)
+        self.linear = nn.Linear(hidden_size, output_size, device=device, dtype=dtype)
+        ### END YOUR SOLUTION
+
+    def forward(self, x, h=None):
+        ### BEGIN YOUR SOLUTION
+        x = self.embedding(x) # (seq_len, bs, embedding_size)
+        out, h = self.model(x, h)
+        seq_len, bs, hidden_size = out.shape
+        out = out.reshape((seq_len * bs, hidden_size))
+        out = self.linear(out)
+        return out, h
+        ### END YOUR SOLUTION
+```
+
+- epoch_general_ptb  
+流程和 hw2 中实现的 epoch 很接近，`iter_num = n_batch - seq_len` 是因为每条句子长度为 n_batch，按照 seq_len 的滑动窗口加载数据集，同时句子的最后一个词不能作为输入（后面没有输出了）。
+
+如果出现没有实现的异常，就从 hw2 中粘过来。
+
+```python
+def epoch_general_ptb(data, model, seq_len=40, loss_fn=nn.SoftmaxLoss(), opt=None,
+        clip=None, device=None, dtype="float32"):
+    np.random.seed(4)
+    ### BEGIN YOUR SOLUTION
+    if opt:
+        model.train()
+    else:
+        model.eval()
+    total_loss = 0
+    total_error = 0
+    n_batch, batch_size = data.shape
+    iter_num = n_batch - seq_len
+    for iter_idx in range(iter_num):
+        X, target = ndl.data.get_batch(data, iter_idx, seq_len, device=device, dtype=dtype)
+        if opt:
+            opt.reset_grad()
+        pred, _ = model(X)
+        loss = loss_fn(pred, target)
+        if opt:
+            opt.reset_grad()
+            loss.backward()
+            if clip:
+                opt.clip_grad_norm(clip)
+            opt.step()
+        total_loss += loss.numpy()
+        total_error += np.sum(pred.numpy().argmax(1)!=target.numpy())
+    avg_loss = total_loss / iter_num
+    avg_acc = 1 - total_error / (iter_num * seq_len)
+    return avg_acc, avg_loss
+    ### END YOUR SOLUTION
+```
+
+- train/evaluate ptb  
+这里有个坑，这两个函数接受的损失函数传进来的是类，但是当我们要调用前面的 epoch 方法时要将其实例化。
+
+```python
+def train_ptb(model, data, seq_len=40, n_epochs=1, optimizer=ndl.optim.SGD,
+          lr=4.0, weight_decay=0.0, loss_fn=nn.SoftmaxLoss, clip=None,
+          device=None, dtype="float32"):
+    np.random.seed(4)
+    ### BEGIN YOUR SOLUTION
+    for epoch in range(n_epochs):
+        avg_acc, avg_loss = epoch_general_ptb(data, model, seq_len, loss_fn(), optimizer(model.parameters(), lr=lr, weight_decay=weight_decay), clip=clip, device=device, dtype=dtype)
+    return avg_acc, avg_loss
+    ### END YOUR SOLUTION
+
+def evaluate_ptb(model, data, seq_len=40, loss_fn=nn.SoftmaxLoss,
+        device=None, dtype="float32"):
+    np.random.seed(4)
+    ### BEGIN YOUR SOLUTION
+    avg_acc, avg_loss = epoch_general_ptb(data, model, seq_len, loss_fn(), device=device, dtype=dtype)
+    return avg_acc, avg_loss
+    ### END YOUR SOLUTION
+```
+
+## hw4 小结
+
+本节最大的难点在于卷积反向传播的推导，当时推导得头秃了。剩余内容基本都是在搭积木和对之前的实现小修小补，也挺烦躁。
+
+总算是完结了，撒花🎉
 
 # 参考文档
 

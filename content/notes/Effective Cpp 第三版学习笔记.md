@@ -3,7 +3,7 @@ title: Effective Cpp 第三版学习笔记
 tags:
   - Cpp
 date: 2024-04-17T18:23:00+08:00
-lastmod: 2024-05-28T18:25:00+08:00
+lastmod: 2024-09-09T23:09:00+08:00
 publish: true
 dir: notes
 slug: notes on effective cpp 3rd ed

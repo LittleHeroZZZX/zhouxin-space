@@ -7,6 +7,7 @@ lastmod: 2024-08-12T23:57:00+08:00
 publish: true
 dir: notes
 slug: note on Programming Massively Parallel Processors A Hands-on Approach 4th Edition
+math: "true"
 ---
 
 # 资源存档
@@ -68,7 +69,55 @@ GPU执行吞吐量很高，然而其并不擅长CPU所擅长的领域，因此�
 
 在过去几十年中，有不少并行编程语言和模型被提出。对于共享内存的多处理器系统，最常用的是OpenMP，对于可扩展集群计算，最常用的是Message Passing Interface （MPI）。
 
-OpenMP由编译器和运行时两部分组成。程序员通过在代码中指定指令directives和编译指示pragmas，编译器可以生成并行代码，运行时负责通过管理线程和资源以支持并行运行。
+OpenMP由编译器和运行时两部分组成。程序员通过在代码中指定指令directives和编译指示pragmas，编译器可以生成并行代码，运行时负责通过管理线程和资源以支持并行运行。OpenMP通过提供自动编译和运行时支持使得程序员们不需要考虑并行编程的细节，也方便在不同的系统/架构中迁移
+
+在MPI中，同一个簇内的计算节点不共享内存，所有的数据和信息通过消息传递机制进行，MPI适合超大规模的HPC集群（节点超过10万个）。由于不共享内存，对于输入输出的分割工作，大部分由编程人员来完成。与之相反，CUDA提供了共享内存。
+
+2009年，工业界几个巨头，包括苹果、因特尔、AMD和英伟达一起开发了一个标准编程模型OpenCL。
+
+## 1.6 Overarching goals 首要目标
+最首要的目标是实现在大规模并行编程中的高性能编程。本书会涉及一些对硬件架构的直觉上的理解，一些计算思维，即以适合大规模并行处理器的执行方式来思考问题。
+
+第二个目标是在并行编程中实现正确的功能和可靠性。CUDA提供了一系列工具来对代码的功能和性能瓶颈进行Debug。
+
+第三个目标是实现对未来更高性能的硬件的可扩展性。这种可扩展性是通过规范化和本地化内存，以减少在更新数据结构中对关键资源的读写和冲突来实现的。
+
+## 1.7 Organization of the book 本书的架构
+略。
+
+# Chapter 2: Heterogeneous data parallel computing 异构数据并行计算
+## 2.1 Data parallelism 数据并行化
+数据彼此独立是数据并行化的基础，通过对计算任务的重新组织，可以将数据并行化，进而获得可观的加速效果。以将像素灰度化举个例子，通过如下公式来计算灰度值：
+{{< math_block >}}
+L = 0.21 \times R+0.72\times G+0.03 \times B
+{{< /math_block >}}
+在上述公式中，一个位置的灰度值仅仅依赖于相同位置的RGB值，显然不同位置之间的灰度化过程是彼此独立的，因而可以进行并行化。
+
+## 2.2 CUDA C program structure CUDA C 程序结构
+CUDA C在ANSI C语法的基础上，通过添加新的语法和库函数使得程序员能够针对包含有CPU和GPU的异构计算系统进行编程。
+
+CUDA C程序的结构体现出主机host（CPU）和设备device（GPU）是在一个计算机上共存的。一个CUDA C源文件可能混合有主机和设备代码，也可以认为一个纯C文件就是一个仅含有主机代码的CUDA C文件。
+
+CUDA程序的执行过程如下图所示，从主机代码开始，然后调用设备代码。核函数将会调用很多threads来执行，由一个kernel调用的所有线程的集合被称为grid。当所有线程执行结束，程序执行又回到主机代码，直到结束或者调用另一个设备代码。
+
+![image.png](https://pics.zhouxin.space/202409131009864.png?x-oss-process=image/quality,q_90/format,webp)
+
+注意，上图是一个简化的模型，事实上在很多异构应用中，CPU和GPU执行过程可能重叠。
+
+在灰度化的例子中，一个像素的灰度化可能由一个线程负责，那么图片越大，完成这个任务的线程数也就越多。得益于优秀的硬件支持，开发人员可以认为线程的创建和调度只需要几个时钟周期。而在CPU 线程中，这一过程需要几千个时钟周期。
+
+## 2.3 A vector addition kernel 向量加法核函数
+向量加法在并行编程中的地位就像Hello World 在顺序编程中一样。在顺序编程中，通过一个循环来实现向量加法。
+
+向量加法由三部分构成，将数据从host搬运到device，计算，再将数据从device搬运到host。理论上来说，如果将搬运任务交给设备代码完成，那么对于设备来说，这个计算过程就是全透明的。但实际上，这部分任务由主机代码负责。
+
+## 2.4 Device global memory and data transfer 设备全局内存和数据搬运
+在device中，其一般都是带有自己的RAM，被称为全局内存。前面提到，在device计算前后，数据要从host mem 搬运到gloabl mem，这一过程由运行在host上的CUDA运行时提供的API来完成。
+
+有两个API用于申请和释放内存。`cudaMalloc`用于申请内存，参数为一个指针的地址和内存大小（单位：字节），分配好的内存首地址将被写入传入的指针。`cudaFree`用于释放内存。在主机代码中不得解引用device mem，这会导致异常或者其它运行时错误。
+
+内存分配结束后，就可以将数据从host mem拷贝到global mem。使用的是`cudaMemcpy ( void* dst, const void* src, size_t count, cudaMemcpyKind kind )`这个API，包括四个参数：目的地址、源地址、字节数、类型。类型字段用于指定拷贝的方向，有四种方向host/device to host/device， 
+
 
 
 # 参考

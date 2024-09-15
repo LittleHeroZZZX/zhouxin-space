@@ -4,7 +4,7 @@ tags:
   - CUDA
   - 深度学习系统
 date: 2024-06-06T13:28:00+08:00
-lastmod: 2024-09-15T17:22:00+08:00
+lastmod: 2024-09-15T17:24:00+08:00
 publish: true
 dir: notes
 slug: notes on cmu 10-414 assignments
@@ -3673,6 +3673,8 @@ class Transformer(Module):
 由于 `ops.matmul` 中对于 batch matmul 的坑太多了，之前只修改了正向传播部分，反向传播仍未支持 matmul，最后没能实现在数据集上进行训练 Transformer 网络，略有遗憾。
 
 ## hw4_extra 小结
+
+hw4_extra 难度相比 hw4 低了很多，毕竟没让我们自己手推 Transformer 的反向传播公式，不然又是一场腥风血雨。
 
 这次是真的完结了，撒花🎉
 

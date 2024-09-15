@@ -4,7 +4,7 @@ tags:
   - CUDA
   - 深度学习系统
 date: 2024-06-06T13:28:00+08:00
-lastmod: 2024-09-14T17:18:00+08:00
+lastmod: 2024-09-15T17:22:00+08:00
 publish: true
 dir: notes
 slug: notes on cmu 10-414 assignments
@@ -3388,6 +3388,293 @@ def evaluate_ptb(model, data, seq_len=40, loss_fn=nn.SoftmaxLoss,
 本节最大的难点在于卷积反向传播的推导，当时推导得头秃了。剩余内容基本都是在搭积木和对之前的实现小修小补，也挺烦躁。
 
 总算是完结了，撒花🎉
+
+# hw4_extra
+
+Fine，还有一个实验，继续！
+
+## Part 1: Implementing the Multi-Head Attention Activation Layer
+
+这部分将完成一个多头自注意层的正向传播部分。在这个类中提供了一系列辅助函数，记得先浏览一遍。
+
+文档中有两点没有提到：
+
+- `self.causal` 决定了是否要进行掩码
+- `self.matmul` 计算的是 `A@B.T` 而不是`A@B
+
+之前实现的 `dropout` 算子有点问题，没有指定 `dtype` 和 `device`，需要修改：
+
+```python
+class Dropout(Module):
+    def __init__(self, p=0.5):
+        super().__init__()
+        self.p = p
+
+    def forward(self, x: Tensor) -> Tensor:
+        ### BEGIN YOUR SOLUTION
+        if not self.training:
+            return x
+        mask = init.randb(*x.shape, p=1 - self.p, dtype="float32", device=x.device)
+        return x * mask / (1 - self.p)
+        ### END YOUR SOLUTION
+```
+
+由于输入的 KQV 在已经把“头”作为一个独立维度分离出来了，实现多头自注意力就简单很多，直接当作单头一样抄公式即可：
+
+```python
+    def forward(
+        self,
+        q, k, v,
+    ):
+        batch_size, num_head, queries_len, q_dim = q.shape
+        _, _, keys_values_len, k_dim = k.shape
+        _, _, _, v_dim = v.shape
+
+        assert q_dim == k_dim == v_dim
+
+        result = None
+        probs = None
+
+        ### BEGIN YOUR SOLUTION
+        sqrt_d = np.sqrt(q_dim)
+        Z = self.matmul(q, k) / sqrt_d
+        if self.causal:
+            mask = self.create_causal_mask(queries_len, keys_values_len, self.device)
+            Z = Z + mask.broadcast_to(Z.shape)
+        probs = self.softmax(Z)
+        probs = self.dropout(probs)
+        result = self.matmul(probs, v.transpose((2, 3)))
+        ### END YOUR SOLUTION
+
+        return result, probs
+```
+
+## Part 2 Implementing the Self-Attention Layer with trainable parameters
+
+本部分将实现一个多头自注意力层，包括对 KQV 进行 preNorm、分头、调用之前实现的正向传播代码、合并、线性映射。
+
+首先修改 `class Matmul` 的实现，使之支持当 A 为 batch 时的 batch matmul 计算：
+
+```python
+class MatMul(TensorOp):
+    def compute(self, a, b):
+        ### BEGIN YOUR SOLUTION
+        a_shape = a.shape
+        if len(a.shape) > 2:
+            batch_size = 1
+            for i in range(0, len(a.shape) - 1):
+                batch_size *= a.shape[i]
+            a = a.reshape((batch_size, a_shape[-1]))
+        out = a@b
+        if len(a_shape) > 2:
+            out = out.reshape((*a_shape[:-1], b.shape[-1]))
+        return out
+        ### END YOUR SOLUTION
+```
+
+之前实现的 layerNorm1D 只支持 (batch_size, hddien_size) 的格式，在调用 perNorm 之前要手动进行 reshape，或者直接修改 layerNorm 的实现。
+
+之前实现的 Linear 模块有点问题，当不存在 bias 时仍旧会尝试对其访问，需要修改：
+
+```python
+class Linear(Module):
+    def forward(self, X: Tensor) -> Tensor:
+        ### BEGIN YOUR SOLUTION
+        y = ops.matmul(X, self.weight)
+        if self.bias:
+            if self.bias.shape != (1, self.out_features):
+                self.bias = self.bias.reshape((1, self.out_features))
+            y += self.bias.broadcast_to(y.shape)
+        return y
+```
+
+分头行动就是先 reshape 再 permute，这一操作在前面的 hw 中已经出现多次，比较熟练。整体实现比较简单，不到十行代码即可：
+
+```python
+def forward(
+	self,
+	q, k=None, v=None,
+):
+	if k is None:
+		k = q
+	if v is None:
+		v = q
+
+	batch_size, queries_len, q_dim = q.shape
+	_, keys_values_len, k_dim = k.shape
+	_, _, v_dim = v.shape
+
+	result = None
+
+	### BEGIN YOUR SOLUTION
+	q, k, v = self.prenorm_q(q), self.prenorm_k(k), self.prenorm_v(v)
+	q, k, v = self.q_projection(q), self.k_projection(k), self.v_projection(v)
+	q = ops.permute(q.reshape((batch_size, queries_len, self.num_head, self.dim_head)), (0, 2, 1, 3))
+	k = ops.permute(k.reshape((batch_size, keys_values_len, self.num_head, self.dim_head)), (0, 2, 1, 3))
+	v = ops.permute(v.reshape((batch_size, keys_values_len, self.num_head, self.dim_head)), (0, 2, 1, 3))
+	attn_res, _ = self.attn(q, k, v)
+	attn_res = ops.permute(attn_res, (0, 2, 1, 3)).reshape((batch_size, keys_values_len, self.num_head * self.dim_head))
+	result = self.out_projection(attn_res)
+	### END YOUR SOLUTION
+
+	return result
+```
+
+## Part 3 Implementing a prenorm residual Transformer Layer
+
+本节将完成一个残差 Transformer 层，本层没有难度，纯搭积木。搭积木之前照例对我们的积木块打个补丁，上个 Part 中修改的 Linear 层仍有问题，bias 不支持多 batch 维度，修改为一下内容：
+
+```python
+def forward(self, X: Tensor) -> Tensor:
+	### BEGIN YOUR SOLUTION
+	y = ops.matmul(X, self.weight)
+	if self.bias:
+		boradcast_shape = [1] * (len(y.shape) - 1) + [self.out_features]
+		bias = self.bias.reshape(boradcast_shape).broadcast_to(y.shape)
+		y += bias
+	return y
+```
+
+接下来就可以愉快地搭积木啦：
+
+```python
+class TransformerLayer(Module):
+
+    def __init__(
+        self,
+        q_features: int,
+        num_head: int,
+        dim_head: int,
+        hidden_size: int,
+        *,
+        dropout = 0.,
+        causal = True,
+        device = None,
+        dtype = "float32",
+    ):
+
+        super().__init__()
+
+        self.device = device
+        self.dtype = dtype
+
+        ### BEGIN YOUR SOLUTION
+        self.layer1 = Sequential(
+            AttentionLayer(
+                q_features=q_features,
+                num_head=num_head,
+                dim_head=dim_head,
+                out_features=q_features,
+                dropout=dropout,
+                causal=causal,
+                device=device,
+                dtype=dtype
+            ),
+            Dropout(dropout),
+        )
+        self.layer2 = Sequential(
+            LayerNorm1d(q_features, device=device, dtype=dtype),
+            Linear(q_features, hidden_size, bias=True, device=device, dtype=dtype),
+            ReLU(),
+            Dropout(dropout),
+            Linear(hidden_size, q_features, bias=True, device=device, dtype=dtype),
+            Dropout(dropout),
+        )
+            
+        ### END YOUR SOLUTION
+
+    def forward(
+        self,
+        x
+    ):
+        batch_size, seq_len, x_dim = x.shape
+
+        ### BEGIN YOUR SOLUTION
+        x = self.layer1(x) + x
+        x = self.layer2(x) + x
+        ### END YOUR SOLUTION
+
+        return x
+```
+
+## Part 4 Implementing the Transformer model
+
+本部分完成的是一个完整的 Transformer 网络。文档中提到，根据每个词在句子中的序号做一个 embed，所以在初始化时要额外初始化一个 embed 层，在数据进入 Transformer 前把这个 embed 加上去。其余部分搭积木：
+
+```python
+class Transformer(Module):
+
+    def __init__(
+        self,
+        embedding_size: int,
+        hidden_size: int,
+        num_layers: int, 
+        *,
+        num_head: int = 8,
+        dim_head: int = 32,
+        dropout = 0.,
+        causal = True,
+        device = None,
+        dtype = "float32",
+        batch_first = False,
+        sequence_len = 2048
+    ):
+
+        super().__init__()
+
+        self.device = device
+        self.dtype = dtype
+        self.batch_first = batch_first
+
+        ### BEGIN YOUR SOLUTION
+        self.embedding = Embedding(
+            num_embeddings=sequence_len,
+            embedding_dim=embedding_size,
+            device=device,
+            dtype=dtype
+        )
+        layers = [TransformerLayer(
+            q_features=embedding_size,
+            num_head=num_head,
+            dim_head=dim_head,
+            hidden_size=hidden_size,
+            dropout=dropout,
+            causal=causal,
+            device=device,
+            dtype=dtype
+        ) for _ in range(num_layers)]
+        self.model = Sequential(*layers)
+        
+        ### END YOUR SOLUTION
+
+    def forward(
+        self,
+        x, h=None
+    ):
+
+        if not self.batch_first:
+            x = ops.transpose(x, axes=(0, 1))
+
+        ### BEGIN YOUR SOLUTION
+        bs, seq_len, input_dim = x.shape
+        time = np.repeat(np.arange(seq_len), bs).reshape((seq_len, bs)).T
+        time = Tensor(time, device=self.device, dtype=self.dtype)
+        time = self.embedding(time)
+        x = x + time
+        x = self.model(x)
+        ### END YOUR SOLUTION
+
+        if not self.batch_first:
+            x = ops.transpose(x, axes=(0, 1))
+
+        return x, init.zeros_like(x)
+```
+
+由于 `ops.matmul` 中对于 batch matmul 的坑太多了，之前只修改了正向传播部分，反向传播仍未支持 matmul，最后没能实现在数据集上进行训练 Transformer 网络，略有遗憾。
+
+## hw4_extra 小结
+
+这次是真的完结了，撒花🎉
 
 # 参考文档
 

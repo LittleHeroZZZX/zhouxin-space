@@ -116,7 +116,29 @@ CUDA程序的执行过程如下图所示，从主机代码开始，然后调用�
 
 有两个API用于申请和释放内存。`cudaMalloc`用于申请内存，参数为一个指针的地址和内存大小（单位：字节），分配好的内存首地址将被写入传入的指针。`cudaFree`用于释放内存。在主机代码中不得解引用device mem，这会导致异常或者其它运行时错误。
 
-内存分配结束后，就可以将数据从host mem拷贝到global mem。使用的是`cudaMemcpy ( void* dst, const void* src, size_t count, cudaMemcpyKind kind )`这个API，包括四个参数：目的地址、源地址、字节数、类型。类型字段用于指定拷贝的方向，有四种方向host/device to host/device， 
+内存分配结束后，就可以将数据从host mem拷贝到global mem。使用的是`cudaMemcpy ( void* dst, const void* src, size_t count, cudaMemcpyKind kind )`这个API，包括四个参数：目的地址、源地址、字节数、类型。类型字段用于指定拷贝的方向，有四种方向host/device to host/device。
+
+## 2.5 核函数和线程
+核函数指的是GPU线程并行执行的代码，这是一种典型的SPMD范式。当主机端调用一个核函数，所有的线程被组织为两级结构：一个核函数由一个grid运行，一个grid含有多个blocks，一个block内有多个threads。每个block内threads的数量都是相同的，且最多为1024个。
+
+每一个线程内都有一个有运行时负责维护的内建变量`blockDim`，其包括三个数据域`x,y,z`，用于记录一个block内线程的数量。三个数据域说明其支持将一个block中的所有thread按照最多三维的形式组织，以便与待处理的数据有更好的对应关系。出于性能考虑，建议每个维度的数量均为32的整数倍。
+
+还有两个内建变量`threadIdx`和`blockIdx`分别thread在block内部的索引和block在gird内部的索引。使用公式`int i = blockDim * block + blockIdx`可以计算每个thread的全局索引，如过让每个thread负责向量加法中一个元素的计算，那么n个thread就可以计算长度不超过n的向量加法，对应的核函数实现为：
+```c
+__global__
+void vecAddKernel(float* A, float* B, float* C){
+	int i = threadIdx.x + blockDim.x * blockIdx.x;
+	if (i<n){
+		C[i] = A[i] + B[i]
+	}
+}
+```
+
+注意到这里使用了限定修饰符`__global__`用于生命此函数既可以host调用，也可以被device调用。CUDA C引入了还引入了两个关键字`__host__`和`__device__`，前者是默认行为，表示该函数在host上运行，只能被host调用；后者则表示该函数在device上运行，只能被device func或者kernel调用，device func本身不会新建任何线程。
+
+此外，可以同时使用`__host__`和`__device__`修饰一个函数，这意味着编译器将分别为host和device生成不同的版本
+
+
 
 
 

@@ -9,7 +9,36 @@
     background: unset !important;
     background-color: var(--code-bg) !important; /* support light/dark */
     color: var(--secondary) !important; /* support light/dark */
+    /* overflow-y: visible;
+    overflow-x: visible; */
 }
+.highlight table {
+    overflow-y: auto;
+    max-height: 500px;
+}
+
+
+/* 代码滚动条的border */
+.post-content table::-webkit-scrollbar-thumb {
+  border: 5px solid var(--code-bg);
+  background: transparent;
+}
+
+.post-content table::-webkit-scrollbar {
+  height: 19px;
+  width: 19px;
+  /* display: none; */
+}
+
+.post-content table:hover::-webkit-scrollbar-thumb {
+  background: rgba(113, 113, 117, 0.9);
+}
+
+.post-content table::-webkit-scrollbar-corner {
+  background: var(--code-bg);
+}
+
+
 
 .post-content code {
   color: tomato;

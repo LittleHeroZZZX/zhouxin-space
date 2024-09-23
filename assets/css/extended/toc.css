@@ -64,10 +64,8 @@
     overflow-y: auto;
 }
 
-.toc .inner::-webkit-scrollbar-thumb {  /*滚动条*/
-    background: var(--border);
-    border: 7px solid var(--theme);
-    border-radius: var(--radius);
+.toc .inner::-webkit-scrollbar-thumb { 
+    border: 5px solid var(--entry);
 }
 
 .toc li ul {

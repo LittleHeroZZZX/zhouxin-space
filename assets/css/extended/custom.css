@@ -51,3 +51,7 @@
   border-inline-start: 3px solid #16A951;
   font-style: italic;
 }
+
+.copy-code{
+  right: 20px;
+}

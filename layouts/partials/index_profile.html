@@ -58,6 +58,11 @@
 </div>
 
 <script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const h1Element = document.querySelector('.profile_inner h1');
+        h1Element.classList.add('typing-effect');
+    });
+    
     document.addEventListener('DOMContentLoaded', function() {
         var header = document.querySelector('.profile_inner h1');
         header.addEventListener('animationend', function(event) {

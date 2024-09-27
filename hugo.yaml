@@ -108,8 +108,3 @@ outputs:
     - HTML
     - RSS
     - JSON # necessary for search
-
-
-frontmatter:
-  date:
-    - lastmod # redirect date to lastmod

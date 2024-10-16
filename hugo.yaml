@@ -85,6 +85,15 @@ menu:
     - name: 📦归档
       url: /archive
       weight: 4
+    - name: 🔗友链
+      weight: 5
+      children:
+    - name: "Albresky's Blog"
+      parent: 🔗友链
+      url: https://www.albresky.cn/
+      params:
+        logo: https://www.albresky.cn/images/avatar.webp
+        description: "FPGA VLSI CAD ..."
 
 markup:
   highlight:

@@ -1,0 +1,127 @@
+.dropdown {
+    position: relative;
+}
+
+.dropdown > a {
+    padding-right: 20px;
+}
+
+.sub-menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    background-color: var(--theme);
+    width: max-content;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    z-index: 1000;
+    border-radius: 5px;
+    padding: 0px;
+    margin: 0px;
+    
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-20px);
+    transition: opacity 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275), 
+                transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275),
+                visibility 0.5s;
+}
+
+.menu-icon {
+    width: 40px;
+    height: 40px;
+    margin-right: 12px;
+    vertical-align: middle;
+    border-radius: 50%;
+}
+
+.dropdown:hover .sub-menu {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.sub-menu li {
+    display: block;
+    margin: 0 !important;
+}
+
+.sub-menu a {
+    padding: 8px 16px;
+    font-size: 14px;
+    white-space: nowrap;
+    display: flex;
+    align-items: center;
+    border-radius: 5px;
+    transition: all 0.3s ease, transform 0.3s ease;
+    position: relative;
+    overflow: hidden;
+    z-index: 1;
+}
+
+.sub-menu a::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    background-color: var(--secondary);
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    transition: all 0.5s ease;
+    z-index: -1;
+}
+
+.sub-menu a:hover {
+    color: #ffffff;  /* 改变文字颜色，根据需要调整 */
+    transform: scale(1.05);  /* 添加轻微的放大效果 */
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);  /* 添加轻微的阴影效果 */
+}
+
+.sub-menu a:hover::before {
+    width: 300px;  /* 使用固定值确保圆形 */
+    height: 300px; /* 使用固定值确保圆形 */
+}
+
+.menu-title {
+    font-size: 18px;
+    font-weight: bold;
+}
+
+.sub-menu li {
+    line-height: normal;
+}
+
+/* 响应式调整 */
+@media screen and (max-width: 768px) {
+    .sub-menu {
+        position: static;
+        box-shadow: none;
+        background-color: transparent;
+        
+        display: none;
+        opacity: 1;
+        visibility: visible;
+        transform: none;
+        transition: none;
+    }
+
+    .dropdown:hover .sub-menu {
+        display: block;
+    }
+
+    .sub-menu a {
+        padding-left: 30px;
+    }
+
+    .sub-menu a:hover {
+        transform: none;  /* 在移动端禁用缩放效果 */
+        box-shadow: none;  /* 在移动端禁用阴影效果 */
+    }
+
+    .sub-menu a:hover::before {
+        width: 0;
+        height: 0;
+    }
+}
+

@@ -85,9 +85,7 @@ menu:
     - name: 📦归档
       url: /archive
       weight: 4
-    - name: 🤝友链
-      url: /404
-      weight: 5
+
 markup:
   highlight:
     # anchorLineNos: true

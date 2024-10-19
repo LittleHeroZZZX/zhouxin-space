@@ -2,11 +2,15 @@
 title: Blog更新日志
 tags: 
 date: 2024-04-02T12:26:00+08:00
-lastmod: 2024-07-08T20:03:00+08:00
+lastmod: 2024-10-19T09:40:00+08:00
 publish: true
 dir: logs
 slug: blog logs
 ---
+
+## 2024-10-17
+
+- 友链上线
 
 ## 2024-07-08
 

@@ -3,7 +3,7 @@ title: Programming Massively Parallel Processors A Hands-on Approach 4th Edition
 tags:
   - CUDA
 date: 2024-10-10T20:09:00+08:00
-lastmod: 2024-10-18T19:28:00+08:00
+lastmod: 2024-10-24T23:16:00+08:00
 publish: true
 dir: notes
 slug: note on Programming Massively Parallel Processors A Hands-on Approach 4th Edition part 2
@@ -416,11 +416,15 @@ __global__ void stencil_kernel(float* in, float* out, unsigned int N) {
 寄存器优化减少了三分之二的共享内存的使用量，但是并没有减少对全局内存的访存次数。
 
 # Chapter 09: Parallel histogram 并行直方图
+
 本章以直方图计算为例，引入了结果输出位置与数据相关的计算模式，介绍了原子操作及其优劣，使用私有化、粗化和聚合等优化技术进行优化。
+
 ## 9.1 Background 背景
+
 对直方图📊的介绍略。
 
 直方图的顺序计算代码如下所示，比较简单：
+
 ```c
 void histogram_sequential(char *data, unsigned int length,
                           unsigned int *histo) {
@@ -434,15 +438,17 @@ void histogram_sequential(char *data, unsigned int length,
 ```
 
 ## 9.2 Atomic operations and a basic histogram kernel 原子操作和一个基本的直方图核函数
+
 最简单的直方图核函数就是起与元素个数数量相等的线程，每个线程负责对其对应的元素进行归类，这种情况下多个线程可能需要同一个输出参数进行更新，这种冲突被称为输出干扰。此时涉及到了原子操作和条件竞争的概念。
 
-条件竞争指的是多线程同时对结果进行更新，这使得结果取决于这些线程的执行顺序。原子操作指的是独占式地完成read-modefy-wirte操作。本节花了大段用于说明什么是条件竞争和原子操作，在OS中学过这些概念，此处省略。
+条件竞争指的是多线程同时对结果进行更新，这使得结果取决于这些线程的执行顺序。原子操作指的是独占式地完成 read-modefy-wirte 操作。本节花了大段用于说明什么是条件竞争和原子操作，在 OS 中学过这些概念，此处省略。
 
-CUDA中提供了一系列支持原子操作的内建函数，其以`atomicXxx`进行命名。
+CUDA 中提供了一系列支持原子操作的内建函数，其以 `atomicXxx` 进行命名。
 
 现代编译器中往往提供了一系列特殊指令用于支持某些特定功能，例如原子操作或者向量化，其对于程序员来说可能以库函数的形式被调用，但在编译层面该库函数调用不存在函数调用过程，而是直接被编译为对应的编译器指令。
 
 应用原子操作后的直方图核函数如下所示：
+
 ```c
 __global__ void histo_kernel(char *data, unsigned int length,
     unsigned int *histo) {
@@ -457,20 +463,23 @@ if (i < length) {
 ```
 
 ## 9.3 Latency and throughput of atomic operations 原子操作的延迟和吞吐量
-在前几章我们了解到，对全局内存的访问很慢很慢，但只要有足够的线程，我们就可以通过零开销上下文切换技术来隐藏这一延迟，并将延迟转移到DRAM带宽。上述操作的前提都是**有足够数量的线程并行访问内存**。遗憾的是，当我们使用对全局内存进行原子操作时，线程对全局内存的读写操作转换为顺序操作，
 
-🙋‍♀️🌰，对于具有8通道、64比特数据位宽、频率为1G、访问延迟为200个时钟周期的DRAM，其峰值吞吐量为8 byte\* 2（每个周期传输两次）\*1G\*8通道=128 GB/s。如果每个元素大小为4字节，那么每秒将能够读写32G个元素。
+在前几章我们了解到，对全局内存的访问很慢很慢，但只要有足够的线程，我们就可以通过零开销上下文切换技术来隐藏这一延迟，并将延迟转移到 DRAM 带宽。上述操作的前提都是**有足够数量的线程并行访问内存**。遗憾的是，当我们使用对全局内存进行原子操作时，线程对全局内存的读写操作转换为顺序操作，
 
-与之相反，每次具有一个读、一个写的原子操作的访问周期是400个时钟周期，那么每秒做多进行2.5M次原子操作。
+🙋‍♀️🌰，对于具有 8 通道、64 比特数据位宽、频率为 1G、访问延迟为 200 个时钟周期的 DRAM，其峰值吞吐量为 8 byte\* 2（每个周期传输两次）\*1G\*8 通道=128 GB/s。如果每个元素大小为 4 字节，那么每秒将能够读写 32G 个元素。
 
-当然，并非所有的原子操作都在对同一个位置进行修改，但即便数据均匀分布，那么理论上限为2.5 M \*7 = 17.5M。但在现实中，由于单词中的字母分布并不均匀，实际加速系数也达不到这么高。
+与之相反，每次具有一个读、一个写的原子操作的访问周期是 400 个时钟周期，那么每秒做多进行 2.5M 次原子操作。
 
-增加原子操作吞吐量的一个手段是减少单词访存延迟，可以使用缓存进行优化。因此，原子操作支持对末级缓存进行操作，末级缓存由所有流多处理器共享。对末级缓存的访存时延相较DRAM少了一个数量级。
+当然，并非所有的原子操作都在对同一个位置进行修改，但即便数据均匀分布，那么理论上限为 2.5 M \*7 = 17.5M。但在现实中，由于单词中的字母分布并不均匀，实际加速系数也达不到这么高。
+
+增加原子操作吞吐量的一个手段是减少单词访存延迟，可以使用缓存进行优化。因此，原子操作支持对末级缓存进行操作，末级缓存由所有流多处理器共享。对末级缓存的访存时延相较 DRAM 少了一个数量级。
 
 ## 9.4 Privatization 私有化
+
 私有化也是增加原子操作吞吐量的一个技术。私有化指的是线程将频繁访问的数据结构拷贝到私有内存中，计算结束后再合并到原数据结构中。
 
-在直方图中，我们可以为每个block应用私有化，并在计算结束后将其合并。代码如下：
+在直方图中，我们可以为每个 block 应用私有化，并在计算结束后将其合并。代码如下：
+
 ```c
 __global__ void histo_private_kernel(char *data, unsigned int length,
                                      unsigned int *histo) {
@@ -493,12 +502,13 @@ __global__ void histo_private_kernel(char *data, unsigned int length,
 }
 ```
 
-以块为单位进行私有化的好处是当我们需要进行同步时（合并前要确保使用同一块副本的线程都计算结束）可以直接调用`syncthreads`。此外，如果直方图的长度够小，还可以在共享内存中声明副本。
+以块为单位进行私有化的好处是当我们需要进行同步时（合并前要确保使用同一块副本的线程都计算结束）可以直接调用 `syncthreads`。此外，如果直方图的长度够小，还可以在共享内存中声明副本。
 
 ## 9.5 Coarsening 粗化
-在CPU中，我们常常让粗化后的线程对数据进行连续访问，这是为了充分利用CPU的缓存机制。
 
-在GPU中，由于内存合并访问技术，不应该让线程内部顺序访问连续数据，而是应该让一个线程束内线程单次连续访存。这种分区方式被称为交错分区interleave partition
+在 CPU 中，我们常常让粗化后的线程对数据进行连续访问，这是为了充分利用 CPU 的缓存机制。
+
+在 GPU 中，由于内存合并访问技术，不应该让线程内部顺序访问连续数据，而是应该让一个线程束内线程单次连续访存。这种分区方式被称为交错分区 interleave partition
 
 ```c
 __global__ void histo_private_kernel(char* data, unsigned int length,
@@ -531,6 +541,7 @@ __global__ void histo_private_kernel(char* data, unsigned int length,
 ```
 
 ## 9.6 Aggregation 聚合
+
 在数据中可能存在局部大量重复区域的情况，这种情况下可能导致线程一起对某个位置同时进行原子操作，为了避免这一情况，我们可以聚合这些局部重复结果，即使用一个变量记录当前的类别和该类别对应的数量，知道计算出不同的类别时才将上一个类别的数量添加到公用变量中。上述技术可以将给予大量重复区域的更新事务合并为一个事务，减少了公用变量的访存密度。
 
 ```c
@@ -576,3 +587,205 @@ __global__ void histo_private_kernel(char* data, unsigned int length,
     }
 }
 ```
+
+# Chapter 10: Reduction 归约
+
+本章介绍了对于归约核函数的一系列优化技术，使用了包括最小化控制流分歧、最小化内存访问分歧、最少全局内存访问、线程粗化等技术。
+
+## 10.1 Background 背景
+
+对归约的介绍略。其中介绍了一个术语 identity value，GPT 将其翻译为单位值，类似于单位元，即在归约运算中（归约都是二元运算），某个数与单位值进行归约操作，结果仍是该数。
+
+## 10.2 Reduction tree 归约树
+
+以 max 算子为例，其归约过程可以用如下一棵归约树进行描述：  
+![image.png](https://pics.zhouxin.space/202410191415104.png?x-oss-process=image/quality,q_90/format,webp)
+
+如果想要用上图所示归约树的过程进行归约，这要求归约算子具备结合律。此外，下一节使用的优化技术还要求归约算子具备交换律。
+
+## 10.3 A simple reduction kernel 一个简单的归约核函数
+
+由于在归约过程中不同的线程之间需要进行数据交互，我们首先从单一 block 开始。由于一个 block 中最多有 1024 个线程，因此我们最多能够处理 2048 个元素。  
+![image.png](https://pics.zhouxin.space/202410191436804.png?x-oss-process=image/quality,q_90/format,webp)
+
+求和归约核函数如上所述，`i` 表示当前线程被分配到的元素下标，只有对应这个下标的线程才能够对这个元素进行写入。使用 `stride` 表示第 `i` 个元素归约操作的另一个参数的距离。在第一轮中，`stride` 为 1，第 `i` 个元素（即所有偶数位索引）需要与 `i+1` 的元素进行相加操作；第二轮中，`stride` 为 2，只有 `i` 为 4 的整数倍的元素需要与 `i+2` 进行相加操作；...；第 `n` 轮中，`stride` 为 2^(n-1)，只有 `i` 为 2^n 的整数倍，即 `threadIdx.x` 为 `stride` 的整数倍才需要进行归约操作，另一个归约元素为 `i+stride`。归约树如下所示：
+
+![image.png](https://pics.zhouxin.space/202410191537773.png?x-oss-process=image/quality,q_90/format,webp)
+
+## 10.4 Minimizing control divergence 最小化控制流分歧
+
+上一节的实现代码具有严重的控制流分歧，在后几轮迭代中，只有 2 的幂的整数倍的线程才会被激活。控制流分歧会导致低硬件资源利用率。控制分歧的思路是在每轮迭代中，尽可能将被激活的线程集中在一起，如下图所示：
+
+![image.png](https://pics.zhouxin.space/202410191553796.png?x-oss-process=image/quality,q_90/format,webp)  
+不难发现，激活线程数量每次都是上一次的一半（向上取整），假设本轮迭代激活了 n 个线程，那么这其中第 `i` 个线程归约运算的两个元素的下标分别为 `i` 和 `n+i`。基于此规律，我们可以写出最小化控制流分歧版本的归约核函数：
+
+```c
+__global__ void ConvergentSumReductionKernel(float* input, float* output) {
+    unsigned int i = threadIdx.x;
+    for (unsigned int stride = blockDim.x; stride >= 1; stride /= 2) {
+        if (threadIdx.x < stride) {
+            input[i] += input[i + stride];
+        }
+        __syncthreads();
+    }
+    if(threadIdx.x == 0) {
+        *output = input[0];
+    }
+}
+```
+
+## 10.5 Minimizing memory divergence 最小化内存分歧
+
+在 10.3 节中给出的代码还有一个缺陷是内存访问分歧，无法启用合并内存访问技术。而上一节中我们无意中修复了这个问题，所有活动线程在每轮迭代中都是连续访问内存的。
+
+## 10.6 Minimizing global memory accesses 最小化全局内存访问
+
+通过共享内存可以避免频繁访问全局内存，代码也挺简单：
+
+```c
+__global__ void SharedMemorySumReductionKernel(float* input) {
+    __shared__ float input_s[BLOCK_DIM];
+    unsigned int t = threadIdx.x;
+    input_s[t] = input[t] + input[t + BLOCK_DIM];
+    for (unsigned int stride = blockDim.x/2; stride >= 1; stride /= 2) {
+        __syncthreads();
+        if (threadIdx.x < stride) {
+            input_s[t] += input_s[t + stride];
+        }
+    }
+    if (threadIdx.x == 0) {
+        *output = input_s[0];
+    }
+}
+```
+
+## 10.7 Hierarchical reduction for arbitrary input length 任意输入长度的分层归约
+
+在此之前，我们假设输入的长度小于一个 block 内的线程数，这是由于我们仅能够对一个 block 内的线程进行同步。当输入长度在一个 block 内放不下时，就需要将其划分到多个 block。由于缺乏 block 间的同步机制，我们选择在每个 block 内部独立进行归约，并将结果通过原子操作归约到全局结果中。如下图所示：  
+![image.png](https://pics.zhouxin.space/202410200849301.png?x-oss-process=image/quality,q_90/format,webp)  
+相应代码为：
+
+```c
+__global__ SegmentedSumReductionKernel(float* input, float* output) {
+    __shared__ float input_s[BLOCK_DIM];
+    unsigned int segment = 2*blockDim.x*blockIdx.x;
+    unsigned int i = segment + threadIdx.x;
+    unsigned int t = threadIdx.x;
+    input_s[t] = input[i] + input[i + BLOCK_DIM];
+    for (unsigned int stride = blockDim.x/2; stride >= 1; stride /= 2) {
+        __syncthreads();
+        if (t < stride) {
+            input_s[t] += input_s[t + stride];
+        }
+    }
+    if (t == 0) {
+        atomicAdd(output, input_s[0]);
+    }
+}
+```
+
+## 10.8 Thread coarsening for reduced overhead 线程粗化
+
+之前的代码都是一个元素对应一个线程，并采取多个 block。如果硬件资源不够，那么这些线程和 block 将以线程束为单位，并且**顺序**执行。前面提到，在每个 block 中，随着归约迭代的进行，一个 block 中的线程很多将空闲下来，而在迭代后期，每个线程束中的线程中的控制流分歧效应愈发显著。如果所有 block 都是并行执行的，那么上述开销难以避免。但如果这些执行块是顺序执行的，则完全没有必要。
+
+```c
+__global__ CoarsenedSumReductionKernel(float* input, float* output) {
+    __shared__ float input_s[BLOCK_DIM];
+    unsigned int segment = COARSE_FACTOR*2*blockDim.x*blockIdx.x;
+    unsigned int i = segment + threadIdx.x;
+    unsigned int t = threadIdx.x;
+    float sum = input[i];
+    for(unsigned int tile = 1; tile < COARSE_FACTOR*2; ++tile) {
+        sum += input[i + tile*BLOCK_DIM];
+    }
+    input_s[t] = sum;
+    for (unsigned int stride = blockDim.x/2; stride >= 1; stride /= 2){
+        __syncthreads();
+        if (t < stride) {
+            input_s[t] += input_s[t + stride];
+        }
+    }
+    if (t == 0) {
+        atomicAdd(output, input_s[0]);
+    }
+}
+```
+
+代码如上所示，每个元素在初始迭代中负责将 `2*COARSE_FACTOR` 个元素而非 2 两个元素相加，其余大致相同。
+
+# Chapter 11: Prefix sum (scan) 前缀和
+
+## 11.1 Background 背景
+
+数学上 inclusive scan 的定义为输入一个具有结合律的算子 $\oplus$ 和一个长度为 n 的向量，输出为：
+
+{{< math_block >}}
+[x_0, x_0\oplus x_1,...,(x_0\oplus x_1\oplus...\oplus x_{n-1})]
+{{< /math_block >}}
+
+上述公式被称为 inclusive 是由于输出元素中包含了对应位置的输入元素，与之相反的是 exclusive scan，其输出表示为：
+
+{{< math_block >}}
+[i, x_0, x_0\oplus x_1,...,(x_0\oplus x_1\oplus...\oplus x_{n-2})]
+{{< /math_block >}}
+
+显然二者可以轻易进行转换，因此本章将以 inclusive scan 进行编程。
+
+## 11.2 Parallel scan with the Kogge-Stone algorithm 使用 Kogge-Stone 算法的并行扫描
+
+在并行算法中，如果我们让每个线程负责一个元素计算，其并不会比顺序算法更快，这是由于计算最后一个元素的线程仍需要进行完整的前缀和计算，相当于跑了一次顺序算法。如果硬件资源不足以支撑所有线程并发执行，那么并行算法将比顺序算法更慢，时间复杂度达到 $O(n^2)$
+
+想要提高并行计算速率，就必须在线程之间共享中间结果。这里介绍 Kogge-Stone 算法。算法示意图如下所示：  
+![image.png](https://pics.zhouxin.space/202410221112153.png?x-oss-process=image/quality,q_90/format,webp)
+
+上图展示了一种就地算法，即图中的 $y_i$ 和 $x_i$ 表示的是同一个位置。上述代码的输入为数组 `XY`，在迭代开始时，`XY` 中包记录了所有 `x[i]`，在进行 `k` 轮迭代之后，`XY[i]` 中记录了 `x[i]` 即其往前最多共 `2^k` 个元素的和。例如，在进行了 2 轮迭代后，`XY[i] = x[i]+x[i-1]+x[i-2]+x[i-3]`。
+
+整个算法流程为：在迭代开始时，`XY[i] = x[i]`；在第一轮迭代中，`XY[0]` 已经符合要求，不需要计算，除第 0 位以为所有元素都加上其前一个元素，即 `XY[i] = XY[i]+XY[i-1]`；在第二轮迭代中，`XY[0,1]` 均已符合要求，不需要计算，除第 0 和 1 位元素外所有元素都加上与其距离为 2 的元素，即 `XY[i]=XY[i]+XY[i-2]`；在第 `k` 轮迭代中，前 `2^(k-1)` 个元素已经符合结果，除此以外的所有元素都加上与其距离为 `2^(k-1)` 的元素，即 `XY[i] = XY[i]+XY[i-2^(k-1)]`。相应核函数实现为：
+
+```c
+__global__ void Kogge_Stone_scan_kernel(float *X, float *Y, unsigned int N){
+	__shared__ float XY[SECTION_SIZE];
+	unsigned int i = blockIdx.x*blockDim.x+threadIdx.x;
+	if(i<N){
+		XY[threadIdx.x] = X[i];
+	} else {
+		XY[threadIdx.x] = 0.0f;
+	}
+	for(unsigned int stride=1; stride < blockDim.x; stride*=2){
+		__syncthreads();
+		float temp;
+		if(threadIdx.x >= stride)
+			temp = XY[threadIdx.x] + XY[threadIdx.x-stride];
+		__syncthreads();
+		if(threadIdx.x >= stride)
+			XY[threadIdx.x] = temp;
+	}
+	if(i<N){
+		Y[i] = XY[threadIdx.x];
+	}
+}
+```
+
+不难发现在公式 `XY[i] = XY[i]+XY[i-stride]` 中具备明显的条件竞争，在上述代码使用一个中间变量 `temp` 暂存计算结果，使用同步确保所有线程都计算完毕后再进行写入操作。
+
+## 11.3 Speed and work efficiency consideration 速度和任务效率考量
+
+并行算法的一个性能指标是任务效率 work efficiency，其表示并行算法的计算量与理论最小计算量的逼近程度。例如，求前缀和最少需要 N-1 即 O(n) 次加法。
+
+Kogge-Stone 算法的任务效率计算公式为：最多有 $\log_2 N$ 轮迭代，每轮迭代需要计算 $N-\text{stride}$ 次加法，总计为：
+
+{{< math_block >}}
+\text{work efficiency} = \sum_{\text{stride}} (N-\text{stride}),\ \ \text{for stride}=1,2,4,...,N//2
+{{< /math_block >}}
+
+第一项与求和变量 `stride` 无关，求和为 $N\log_2 N$，第二项为等差数列求和，近似于 $N-1$，最终计算效率与二者之和，即 $N\log_2 N - (N-1)$。
+
+好消息是其性能比起 O(n^2) 的朴素算法要好，坏消息是比不上顺序算法 O(n)。尽管其计算操作数比顺序算法多，但是其仅需要 $log_2 N$ 轮迭代即可计算结束，而在顺序算法中需要 $N$ 轮迭代才能算完。在实际中，由于线程束控制流分歧的存在，并不能达到我们的理论任务效率，实际中的任务效率约为 $N\log_2 N$。
+
+我们可以使用迭代次数来比较不同的并行算法，但是迭代次数少的算法并不一定运行速度就快，由于算法消耗的资源和具体硬件资源的限制，可能出现单轮迭代无法并行执行的情况。
+
+Kogge-Stone 算法的缺点是在硬件资源受限的情况下其执行效率很低，并且由于加法次数仍未优化到最低，这些额外的加法也会带来功耗开销。而其优点是，在硬件资源充足的情况下性能很高。
+
+## 11.4 Parallel scan with the Brent-Kung algorithm 使用 Brent-Kung 算法的并行扫描
+
+本文停更。

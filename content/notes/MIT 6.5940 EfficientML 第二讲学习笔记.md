@@ -6,6 +6,7 @@ lastmod: 2024-11-08T19:03:00+08:00
 publish: true
 dir: notes
 slug: notes on mit efficientml 2nd lecture
+math: "true"
 ---
 
 如无另外说明，本文图片截取自 [EfficientML](efficient.ml) 课程幻灯片。

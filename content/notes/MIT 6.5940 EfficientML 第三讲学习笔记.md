@@ -3,10 +3,11 @@ title: MIT 6.5940 EfficientML 第三讲学习笔记
 tags:
   - EfficientML
 date: 2024-11-09T14:01:00+08:00
-lastmod: 2024-11-10T16:11:00+08:00
+lastmod: 2024-11-10T16:12:00+08:00
 publish: true
 dir: notes
 slug: notes on mit efficientml 3rd lecture
+math: "true"
 ---
 
 > MIT 6.5940 EfficientML 第三讲学习笔记，主要介绍剪枝的定义、效果和粗细程度，并详细介绍了多种剪枝标准。

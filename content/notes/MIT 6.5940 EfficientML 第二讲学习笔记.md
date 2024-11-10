@@ -1,8 +1,9 @@
 ---
 title: MIT 6.5940 EfficientML 第二讲学习笔记
-tags: 
+tags:
+  - EfficientML
 date: 2024-11-05T22:33:00+08:00
-lastmod: 2024-11-08T19:03:00+08:00
+lastmod: 2024-11-10T16:12:00+08:00
 publish: true
 dir: notes
 slug: notes on mit efficientml 2nd lecture

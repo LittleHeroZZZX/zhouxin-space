@@ -1,4 +1,8 @@
-body,  
-.post-content {  
-  font-family: "LXGW WenKai Screen R", "Roboto", "PingFang SC", "Microsoft Yahei", sans-serif;
-}  
+body,
+.post-content {
+  font-family: "Lora", "Noto Serif SC", "PingFang SC", "Microsoft Yahei", sans-serif;
+}
+
+code {
+  font-family: "Source Code Pro";
+}

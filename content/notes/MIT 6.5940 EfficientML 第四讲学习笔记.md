@@ -13,7 +13,7 @@ math: "true"
 
 如无另外说明，图片均引用自[EfficientML](https://efficientml.ai)课程幻灯片。
 # Lecture 4: Pruning and sparsity 剪枝和稀疏性
-
+	
 # 剪枝率
 
 如下图所示，研究指出对每一层采取不均匀的剪枝比例的效果显著优于均匀剪枝，问题在于如何确定每一层的剪枝比例。  

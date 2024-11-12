@@ -3,17 +3,19 @@ title: MIT 6.5940 EfficientML 第四讲学习笔记
 tags:
   - EfficientML
 date: 2024-11-11T13:52:00+08:00
-lastmod: 2024-11-12T20:11:00+08:00
+lastmod: 2024-11-12T20:19:00+08:00
 publish: true
 dir: notes
 slug: notes on mit efficientml 4th lecture
 math: "true"
 ---
-> 本讲延续上一讲继续介绍了两种确定剪枝比例的算法：灵敏度分析和强化学习。此外还介绍了为稀疏网络提供支持的硬件加速器，包括EIE、NVIDIA Tensor Core、TorchSparse等。
 
-如无另外说明，图片均引用自[EfficientML](https://efficientml.ai)课程幻灯片。
+> 本讲延续上一讲继续介绍了两种确定剪枝比例的算法：灵敏度分析和强化学习。此外还介绍了为稀疏网络提供支持的硬件加速器，包括 EIE、NVIDIA Tensor Core、TorchSparse 等。
+
+如无另外说明，图片均引用自 [EfficientML](https://efficientml.ai) 课程幻灯片。
+
 # Lecture 4: Pruning and sparsity 剪枝和稀疏性
-	
+
 # 剪枝率
 
 如下图所示，研究指出对每一层采取不均匀的剪枝比例的效果显著优于均匀剪枝，问题在于如何确定每一层的剪枝比例。  

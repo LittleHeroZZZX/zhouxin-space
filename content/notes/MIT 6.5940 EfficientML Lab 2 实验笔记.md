@@ -2,14 +2,14 @@
 title: MIT 6.5940 EfficientML Lab 2 实验笔记
 tags: 
 date: 2025-02-25T15:35:00+08:00
-lastmod: 2025-02-25T19:24:00+08:00
+lastmod: 2025-02-25T19:29:00+08:00
 publish: true
 dir: notes
 slug: notes on mit efficientml Lab 2
 math: "true"
 ---
 
-> 本问记录为 EfficientML Lab 2 实验笔记，包含 K-Means 量化、K-Means QAT、线性量化等内容，难度不大，内容丰富。
+> 本文为 EfficientML Lab 2 实验笔记，包含 K-Means 量化、K-Means QAT、线性量化等内容，难度不大，内容丰富。
 
 # Part 1: K-Means Quantization
 

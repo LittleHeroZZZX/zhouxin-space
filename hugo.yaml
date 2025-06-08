@@ -85,8 +85,11 @@ menu:
     - name: 📦归档
       url: /archive
       weight: 4
-    - name: 🔗友链
+    - name: "💡关于"
+      url: /about-me
       weight: 5
+    - name: 🔗友链
+      weight: 6
       children:
     - name: "Albresky's Blog"
       parent: 🔗友链

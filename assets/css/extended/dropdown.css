@@ -2,9 +2,9 @@
     position: relative;
 }
 
-.dropdown > a {
+/* .dropdown > a {
     padding-right: 20px;
-}
+} */
 
 .sub-menu {
     position: absolute;
@@ -12,18 +12,18 @@
     right: 0;
     background-color: var(--theme);
     width: max-content;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
     z-index: 1000;
     border-radius: 5px;
     padding: 0px;
     margin: 0px;
-    
+
     opacity: 0;
     visibility: hidden;
     transform: translateY(-20px);
-    transition: opacity 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275), 
-                transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275),
-                visibility 0.5s;
+    transition: opacity 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275),
+        transform 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275),
+        visibility 0.5s;
 }
 
 .menu-icon {
@@ -73,14 +73,19 @@
 }
 
 .sub-menu a:hover {
-    color: #ffffff;  /* 改变文字颜色，根据需要调整 */
-    transform: scale(1.05);  /* 添加轻微的放大效果 */
-    box-shadow: 0 2px 5px rgba(0,0,0,0.1);  /* 添加轻微的阴影效果 */
+    color: #ffffff;
+    /* 改变文字颜色，根据需要调整 */
+    transform: scale(1.05);
+    /* 添加轻微的放大效果 */
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    /* 添加轻微的阴影效果 */
 }
 
 .sub-menu a:hover::before {
-    width: 300px;  /* 使用固定值确保圆形 */
-    height: 300px; /* 使用固定值确保圆形 */
+    width: 300px;
+    /* 使用固定值确保圆形 */
+    height: 300px;
+    /* 使用固定值确保圆形 */
 }
 
 .menu-title {
@@ -98,7 +103,7 @@
         position: static;
         box-shadow: none;
         background-color: transparent;
-        
+
         display: none;
         opacity: 1;
         visibility: visible;
@@ -115,8 +120,10 @@
     }
 
     .sub-menu a:hover {
-        transform: none;  /* 在移动端禁用缩放效果 */
-        box-shadow: none;  /* 在移动端禁用阴影效果 */
+        transform: none;
+        /* 在移动端禁用缩放效果 */
+        box-shadow: none;
+        /* 在移动端禁用阴影效果 */
     }
 
     .sub-menu a:hover::before {
@@ -124,4 +131,3 @@
         height: 0;
     }
 }
-

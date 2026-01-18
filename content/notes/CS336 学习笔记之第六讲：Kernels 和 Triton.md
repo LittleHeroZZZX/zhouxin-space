@@ -8,6 +8,7 @@ lastmod: 2026-01-13T20:33:00+08:00
 publish: true
 dir: notes
 slug: notes on cs336 lecture 6 kernels and triton
+math: "true"
 ---
 
 ---
